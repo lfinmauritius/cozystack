@@ -73,6 +73,8 @@ func main() {
 		log.Fatalf("Failed to load key pair: %v", err)
 	}
 
+	tlsConfig.MinVersion = tls.VersionTLS12
+
 	// Default: ask for a client certificate, accept the connection either way.
 	// This never rejects a caller, so it cannot break admission; it only makes
 	// the certificate visible to logClientCert.
