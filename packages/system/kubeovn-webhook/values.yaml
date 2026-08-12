@@ -1,3 +1,24 @@
 portSecurity: true
 routes: ""
+# Client-certificate verification for callers of the /mutate-pods endpoint.
+#
+# The handler returns namespace-derived annotations to whoever asks it, so the
+# only thing that keeps it from answering an arbitrary in-cluster pod is
+# authenticating the caller (GHSA-g883-q79m-8225). NetworkPolicy is not an
+# option here: packages/system/kubeovn/values.yaml sets ENABLE_NP: false, so
+# kube-ovn-controller programs no ACLs and a NetworkPolicy object would be
+# created and never enforced.
+#
+# Empty (the default) = certificates are requested and logged, never required.
+# Nothing is rejected, so this cannot break admission. Read the webhook log:
+#   "client certificate: presented, issuer ..."  → enforcement is possible
+#   "client certificate: none presented"         → it is not, yet
+#
+# Set it to the in-pod path of a CA bundle to switch to
+# RequireAndVerifyClientCert. Do this ONLY after the log confirms the API
+# server presents a certificate: this webhook is registered with
+# failurePolicy: Fail, so rejecting the API server stops pod creation
+# cluster-wide. The API server sends a certificate only when the cluster runs
+# with an AdmissionConfiguration that names a kubeConfigFile for this webhook.
+clientCAFile: ""
 image: ghcr.io/cozystack/cozystack/kubeovn-webhook:v1.6.0@sha256:593c324a38db59495497c5b68b90cad25dfe6753c73b7a287b3280e26f70a15f
