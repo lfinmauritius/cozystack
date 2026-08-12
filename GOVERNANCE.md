@@ -21,6 +21,24 @@ maintained under the `cozystack` namespace:
 * **[talos-bootstrap](https://github.com/cozystack/talos-bootstrap):** An interactive Talos Linux installer
 * **[talos-meta-tool](https://github.com/cozystack/talos-meta-tool):** Tool for writing network metadata into META partition
 
+## Third-party Dependencies
+
+Cozystack packages and ships software it does not govern. Such components remain
+under their upstream owner's namespace, are vendored by digest, and are neither
+released by this project nor mirrored under `ghcr.io/cozystack`.
+
+Two of them are maintained by an individual who is also a Cozystack maintainer.
+They are named here so that the distinction is documented rather than inferred:
+
+* **[kuberture](https://github.com/lexfrei/kuberture):** EndpointSlice-to-DNS controller, BSD-3-Clause. Vendored as `packages/system/kuberture`; installed only when explicitly listed in `bundles.enabledPackages`.
+* **[ouroboros](https://github.com/lexfrei/ouroboros):** hairpin-NAT fix for Ingress behind PROXY-protocol, BSD-3-Clause. Vendored as `packages/system/ouroboros`; installed only when `publishing.proxyProtocol` is enabled, or as an opt-in tenant cluster addon.
+
+Both are independent upstreams rather than Cozystack components: each carries its
+own identity and licence, addresses a problem that exists outside this project,
+and is absent from a default installation. Their charts and images are pinned by
+digest, and each package documents how operators should mirror them for
+air-gapped installations.
+
 ## Community Roles
 
 * **Users:** Members that engage with the Cozystack community via any medium, including Slack, Telegram, GitHub, and mailing lists.
