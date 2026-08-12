@@ -25,7 +25,9 @@ maintained under the `cozystack` namespace:
 
 Cozystack packages and ships software it does not govern. Such components remain
 under their upstream owner's namespace, are vendored by digest, and are neither
-released by this project nor mirrored under `ghcr.io/cozystack`.
+released by this project nor mirrored under `ghcr.io/cozystack`. Those components
+are enumerated, with their licences, on the
+[Licenses](https://cozystack.io/docs/v1.6/operations/configuration/licenses/) page.
 
 Two of them are maintained by an individual who is also a Cozystack maintainer.
 They are named here so that the distinction is documented rather than inferred:
