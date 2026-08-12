@@ -25,18 +25,12 @@ maintained under the `cozystack` namespace:
 
 Cozystack packages and ships software it does not govern. Such components remain
 under their upstream owner's namespace, are vendored by digest, and are neither
-released by this project nor mirrored under `ghcr.io/cozystack`. They are
-enumerated, with their licences, on the
-[Licenses](https://cozystack.io/docs/v1.6/operations/configuration/licenses/)
-page, which by construction lists upstreams only: what this project maintains is
-Apache-2.0 and is not listed there individually.
+released by this project nor mirrored under `ghcr.io/cozystack`.
 
-Some of those upstreams are maintained by individuals rather than organisations,
-and such an individual may also hold a role in this project. Neither fact makes
-the software a Cozystack component. The test is governance: a dependency keeps
-its own identity, licence and release process, and addresses a problem that
-exists outside Cozystack; a component is released under this project's
-governance and carries its licence.
+They are enumerated, with their licences, on the
+[Licenses](https://cozystack.io/docs/v1.6/operations/configuration/licenses/)
+page. That page lists upstreams only: what this project maintains is Apache-2.0
+and is not listed there individually.
 
 ## Community Roles
 
