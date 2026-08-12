@@ -25,21 +25,18 @@ maintained under the `cozystack` namespace:
 
 Cozystack packages and ships software it does not govern. Such components remain
 under their upstream owner's namespace, are vendored by digest, and are neither
-released by this project nor mirrored under `ghcr.io/cozystack`. Those components
-are enumerated, with their licences, on the
-[Licenses](https://cozystack.io/docs/v1.6/operations/configuration/licenses/) page.
+released by this project nor mirrored under `ghcr.io/cozystack`. They are
+enumerated, with their licences, on the
+[Licenses](https://cozystack.io/docs/v1.6/operations/configuration/licenses/)
+page, which by construction lists upstreams only: what this project maintains is
+Apache-2.0 and is not listed there individually.
 
-Two of them are maintained by an individual who is also a Cozystack maintainer.
-They are named here so that the distinction is documented rather than inferred:
-
-* **[kuberture](https://github.com/lexfrei/kuberture):** EndpointSlice-to-DNS controller, BSD-3-Clause. Vendored as `packages/system/kuberture`; installed only when explicitly listed in `bundles.enabledPackages`.
-* **[ouroboros](https://github.com/lexfrei/ouroboros):** hairpin-NAT fix for Ingress behind PROXY-protocol, BSD-3-Clause. Vendored as `packages/system/ouroboros`; installed only when `publishing.proxyProtocol` is enabled, or as an opt-in tenant cluster addon.
-
-Both are independent upstreams rather than Cozystack components: each carries its
-own identity and licence, addresses a problem that exists outside this project,
-and is absent from a default installation. Their charts and images are pinned by
-digest, and each package documents how operators should mirror them for
-air-gapped installations.
+Some of those upstreams are maintained by individuals rather than organisations,
+and such an individual may also hold a role in this project. Neither fact makes
+the software a Cozystack component. The test is governance: a dependency keeps
+its own identity, licence and release process, and addresses a problem that
+exists outside Cozystack; a component is released under this project's
+governance and carries its licence.
 
 ## Community Roles
 
