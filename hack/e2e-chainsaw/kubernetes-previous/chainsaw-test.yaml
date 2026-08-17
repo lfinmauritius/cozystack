@@ -36,7 +36,6 @@ spec:
         #     its first reading, one wait passes, each takes its second)
         #   guest Talos capture
         #   ghcr-mirror state, access log and warm-up Job
-        #   talos-image-cache diagnosis
         # and then, after the phase rather than inside it, the in-process tenant
         # crust-gather snapshot.
         #
