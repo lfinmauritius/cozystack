@@ -7,3 +7,7 @@ plus the five files of cozystack/cozystack#3978 (hotpluggable disks, commit f3e4
 
 Consumed by a Flux GitRepository referenced from PackageSource
 cozystack.vm-instance-application. Not a fork branch: orphan history.
+
+Branch lab/v1.6.1-static-ip adds, on top of the above, networks[].ipAddress pinned through the
+network backend the cluster serves (Kube-OVN per-network annotation, or the Cozyplane
+sdn.cozystack.io/networks launcher annotation), with the regenerated schema and RD.
