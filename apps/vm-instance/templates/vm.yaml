@@ -8,6 +8,17 @@
 {{-   fail "Either instanceType or resources (cpu, sockets, memory) must be specified" }}
 {{- end }}
 {{- $networks := .Values.networks | default .Values.subnets }}
+{{- $primary := .Values.primaryNetwork | default "" }}
+{{- if $primary }}
+{{- if not (.Capabilities.APIVersions.Has "sdn.cozystack.io/v1alpha1/VPC") }}
+{{- fail "primaryNetwork requires Cozyplane" }}
+{{- end }}
+{{- $found := false }}
+{{- range $net := $networks }}
+{{- if eq $net.name $primary }}{{- $found = true }}{{- end }}
+{{- end }}
+{{- if not $found }}{{- fail "primaryNetwork must be attached" }}{{- end }}
+{{- end }}
 
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
@@ -59,12 +70,12 @@ spec:
         */}}
         {{- $pinned := list }}
         {{- range $net := $networks }}
-        {{- if $net.ipAddress }}
-        {{- $pinned = append $pinned (dict "name" (printf "pod%s" (sha256sum $net.name | trunc 11)) "vpc" (printf "%s/%s" $.Release.Namespace $net.name) "ip" $net.ipAddress) }}
+        {{- if or $net.ipAddress (eq $net.name $primary) }}
+        {{- $pinned = append $pinned (dict "name" (ternary "eth0" (printf "pod%s" (sha256sum $net.name | trunc 11)) (eq $net.name $primary)) "vpc" (printf "%s/%s" $.Release.Namespace $net.name) "ip" $net.ipAddress) }}
         {{- end }}
         {{- end }}
         {{- if $pinned }}
-        {{- if .Capabilities.APIVersions.Has "kubeovn.io/v1/IP" }}
+        {{- if and (not $primary) (.Capabilities.APIVersions.Has "kubeovn.io/v1/IP") }}
         {{- range $net := $networks }}
         {{- if $net.ipAddress }}
         {{ printf "%s.%s.ovn.kubernetes.io/ip_address" $net.name $.Release.Namespace }}: {{ $net.ipAddress | quote }}
@@ -123,8 +134,10 @@ spec:
           - name: default
             bridge: {}
           {{- range $i, $net := $networks }}
+          {{- if ne $net.name $primary }}
           - name: {{ $net.name }}
             bridge: {}
+          {{- end }}
           {{- end }}
         machine:
           type: ""
@@ -164,7 +177,9 @@ spec:
       - name: default
         pod: {}
       {{- range $i, $net := $networks }}
+      {{- if ne $net.name $primary }}
       - name: {{ $net.name }}
         multus:
           networkName: {{ $.Release.Namespace }}/{{ $net.name }}
+      {{- end }}
       {{- end }}
