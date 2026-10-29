@@ -26,9 +26,10 @@ tests:
     documentSelector:
       path: kind
       value: DaemonSet
+    # The chart passes the flag only to turn writing off; the agent writes by default.
     set:
-      cniConfEnabled: true
+      writeCNIConf: true
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
-          content: --write-cni-conf=true
+          content: --write-cni-conf=false

@@ -75,4 +75,4 @@ tests:
           value: "false"
       - equal:
           path: data.devices
-          value: eth0 cozyplane0
+          value: eth0 eth1 cozyplane0
