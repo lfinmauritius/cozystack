@@ -20,6 +20,17 @@
 {{-   fail "Either instanceType or resources (cpu, sockets, memory) must be specified" }}
 {{- end }}
 {{- $networks := .Values.networks | default .Values.subnets }}
+{{- $primary := .Values.primaryNetwork | default "" }}
+{{- if $primary }}
+{{- if not (.Capabilities.APIVersions.Has "sdn.cozystack.io/v1alpha1/VPC") }}
+{{- fail "primaryNetwork requires Cozyplane" }}
+{{- end }}
+{{- $found := false }}
+{{- range $net := $networks }}
+{{- if eq $net.name $primary }}{{- $found = true }}{{- end }}
+{{- end }}
+{{- if not $found }}{{- fail "primaryNetwork must be attached" }}{{- end }}
+{{- end }}
 
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
@@ -53,6 +64,39 @@ spec:
         {{- if $ovnIP }}
         ovn.kubernetes.io/mac_address: {{ $ovnIP.spec.macAddress | quote }}
         ovn.kubernetes.io/ip_address: {{ $ovnIP.spec.ipAddress | quote }}
+        {{- end }}
+        {{- end }}
+        {{- /*
+        networks[].ipAddress pins the address of a secondary NIC through whichever
+        backend the cluster serves. Kube-OVN reads a per-network annotation key,
+        <nad>.<namespace>.ovn.kubernetes.io/ip_address. Cozyplane reads one launcher
+        pod annotation, sdn.cozystack.io/networks: a JSON list with an entry per
+        pinned NIC, selected by the interface name Multus hands to the CNI. KubeVirt
+        names a secondary interface "pod" plus the first 11 hex digits of the
+        sha256 of the network name, so the entry carries that name and the VPC the
+        NAD names; an entry without a name would be read as a leg of the pod itself.
+        Both keys reuse the <namespace>/<network> the multus reference below is
+        composed from, so a pinned network and an attached network cannot disagree.
+        With neither backend served the render fails: a value that would be dropped
+        silently is worse than a render that says why it stopped.
+        */}}
+        {{- $pinned := list }}
+        {{- range $net := $networks }}
+        {{- if or $net.ipAddress (eq $net.name $primary) }}
+        {{- $pinned = append $pinned (dict "name" (ternary "eth0" (printf "pod%s" (sha256sum $net.name | trunc 11)) (eq $net.name $primary)) "vpc" (printf "%s/%s" $.Release.Namespace $net.name) "ip" $net.ipAddress) }}
+        {{- end }}
+        {{- end }}
+        {{- if $pinned }}
+        {{- if and (not $primary) (.Capabilities.APIVersions.Has "kubeovn.io/v1/IP") }}
+        {{- range $net := $networks }}
+        {{- if $net.ipAddress }}
+        {{ printf "%s.%s.ovn.kubernetes.io/ip_address" $net.name $.Release.Namespace }}: {{ $net.ipAddress | quote }}
+        {{- end }}
+        {{- end }}
+        {{- else if .Capabilities.APIVersions.Has "sdn.cozystack.io/v1alpha1/VPC" }}
+        sdn.cozystack.io/networks: {{ $pinned | toJson | quote }}
+        {{- else }}
+        {{-   fail "networks[].ipAddress needs a network backend that pins addresses: neither kubeovn.io/v1 IP nor sdn.cozystack.io/v1alpha1 VPC is served" }}
         {{- end }}
         {{- end }}
       labels:
@@ -117,8 +161,10 @@ spec:
           - name: default
             bridge: {}
           {{- range $i, $net := $networks }}
+          {{- if ne $net.name $primary }}
           - name: {{ $net.name }}
             bridge: {}
+          {{- end }}
           {{- end }}
         machine:
           type: ""
@@ -138,9 +184,15 @@ spec:
 
       volumes:
       {{- range .Values.disks }}
+      {{- if and .hotpluggable (not (has (default "" .bus) (list "scsi" "virtio"))) }}
+      {{-   fail (printf "Disk %s: hotpluggable requires bus to be 'scsi' or 'virtio', got %q" .name (default "" .bus)) }}
+      {{- end }}
       - name: disk-{{ .name }}
         dataVolume:
           name: vm-disk-{{ .name }}
+          {{- if .hotpluggable }}
+          hotpluggable: true
+          {{- end }}
       {{- end }}
       {{- if or .Values.cloudInit .Values.sshKeys .Values.netplanDhcp }}
       - name: cloudinitdisk
@@ -158,7 +210,9 @@ spec:
       - name: default
         pod: {}
       {{- range $i, $net := $networks }}
+      {{- if ne $net.name $primary }}
       - name: {{ $net.name }}
         multus:
           networkName: {{ $.Release.Namespace }}/{{ $net.name }}
+      {{- end }}
       {{- end }}

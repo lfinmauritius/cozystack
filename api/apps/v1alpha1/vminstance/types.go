@@ -44,6 +44,9 @@ type ConfigSpec struct {
 	// Networks to attach the VM to.
 	// +kubebuilder:default:={}
 	Networks []Network `json:"networks,omitempty"`
+	// Name of an attached network that becomes the VM's primary interface in place of the pod network (Cozyplane only).
+	// +kubebuilder:default:=""
+	PrimaryNetwork string `json:"primaryNetwork"`
 	// Deprecated: use networks instead.
 	// +kubebuilder:default:={}
 	Subnets []Network `json:"subnets,omitempty"`
@@ -76,6 +79,8 @@ type ConfigSpec struct {
 type Disk struct {
 	// Disk bus type (e.g. "sata").
 	Bus string `json:"bus,omitempty"`
+	// Allow attaching and detaching the disk while the VM is running. Requires the DeclarativeHotplugVolumes feature gate on the cluster, and bus to be "scsi" or "virtio".
+	Hotpluggable bool `json:"hotpluggable,omitempty"`
 	// Disk name.
 	Name string `json:"name"`
 }
@@ -95,6 +100,8 @@ type GPU struct {
 }
 
 type Network struct {
+	// Static IPv4 address for this interface, pinned through the network backend the cluster serves (Kube-OVN or Cozyplane). Empty lets IPAM allocate one. The address must be free and inside the network CIDR; the backend refuses the VM otherwise.
+	IpAddress string `json:"ipAddress,omitempty"`
 	// Network attachment name.
 	Name string `json:"name,omitempty"`
 }
