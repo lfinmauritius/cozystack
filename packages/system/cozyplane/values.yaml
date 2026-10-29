@@ -6,7 +6,7 @@ api:
 # Digest-pinned (no floating tag). Built and published by .github/workflows/
 # release.yml on every push to main; see docs/packaging.md for how the digest is
 # refreshed and why pinning it does not change it.
-image: ghcr.io/lllamnyp/cozyplane@sha256:55132be06a41a1edf4a57f2120d02996f3c6ffb98ab553f4c1dda581fec257d4
+image: 192.168.100.1:5000/b195/cozyplane@sha256:e64ac814a28241e9ffad41b70d22f951650bdd82250cd7ad0ae99b7845f3295a
 imagePullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -45,7 +45,7 @@ clusterDomain: ""
 egress:
   # Router for connected external IPv4 pools on a secondary link. Empty keeps
   # the first-host convention. An explicit FIB gateway always takes priority.
-  floatingNextHopIPv4: ""
+  floatingNextHopIPv4: "172.16.255.254"
   # The cluster pod supernet(s), comma-separated for dual-stack (e.g.
   # "10.244.0.0/16,fd00:10:244::/56"). Enables the cluster-egress masquerade
   # (pods get an off-cluster return path) and is denied to VPC tenants at
@@ -55,7 +55,8 @@ egress:
   # reservation such as Cozystack's Cilium router block (the last /21 of the
   # pod CIDR): ["10.244.248.0/21"]. Pods already holding an address there keep
   # it until they are recreated.
-  podCIDRExclude: []
+  podCIDRExclude:
+  - 10.244.248.0/21
   # Masquerade implementation: "bpf" (eBPF SNAT at the uplink, no netfilter,
   # both families), "iptables" (legacy kernel rule, v4 only), or "off".
   masquerade: "bpf"
@@ -67,7 +68,9 @@ egress:
   # Additional cluster-internal networks VPC tenants must not reach through
   # their gateways (e.g. the node/management network). Also feeds the managed-VPN
   # route-CIDR deny-set — include the node network here so it is covered.
-  internalCIDRs: []
+  internalCIDRs:
+  - 192.168.100.0/24
+  - 172.16.0.0/16
 
 # Managed VPN (issue #6, docs/vpn.md). The controller runs tunnel appliances for
 # VPNGateway/VPNConnection; these bound their placement and per-tenant scale.
@@ -85,14 +88,14 @@ vpn:
   # Opt in after the kubelet admits net.ipv4.ip_forward and
   # net.ipv6.conf.all.forwarding as pod sysctls. Drops privileged mode and keeps
   # only NET_ADMIN, NET_RAW and NET_BIND_SERVICE.
-  hardenedAppliance: false
+  hardenedAppliance: true
   # Dedicated PodSecurity-exempt class. Use together with hardenedAppliance;
   # the operator must configure admission exemption and kubelet sysctl admission.
-  runtimeClassName: ""
+  runtimeClassName: cozyplane-vpn
   runtimeClass:
     # Create the runc RuntimeClass and its appliance-only admission guard.
     # Requires Kubernetes >= 1.30, a name and hardenedAppliance=true.
-    create: false
+    create: true
   # Prometheus-compatible VPN metrics are exposed by every tunnel appliance on
   # its named vpn-metrics port. Resources below are rendered only when their
   # respective operator CRDs are installed in the cluster.

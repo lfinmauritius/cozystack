@@ -5,7 +5,7 @@ type: application
 # Unused as a release coordinate: these charts are consumed straight from this
 # git repository (packages/packagesources/, GitRepository -> PackageSource), so
 # the commit is the version and nothing resolves this field. Kept at 0.0.0.
-version: 0.3.30
+version: 0.3.30-integ.20261029.3
 appVersion: "0.1.0"
 kubeVersion: ">=1.30.0-0"
 keywords:
