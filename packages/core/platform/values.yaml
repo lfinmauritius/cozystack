@@ -38,6 +38,13 @@ bundles:
   system:
     enabled: false
     variant: "isp-full" # Options: "isp-full", "isp-full-generic", "isp-hosted", "isp-slim", "isp-slim-generic", "isp-hosted-slim"
+    # CNI/networking selector for the "isp-full" (Talos) variant:
+    #   "kubeovn-cilium" — KubeOVN fabric + Cilium (default)
+    #   "cozyplane"      — cozyplane eBPF CNI + cozyplane-kpr socket-LB KPR
+    #                      (no Cilium, no kube-proxy)
+    #   "cozyplane-cilium" - cozyplane CNI/IPAM chained into full Cilium;
+    #                         Cilium alone owns Services/KPR and Gateway API
+    networkingVariant: "kubeovn-cilium"
   iaas:
     enabled: false
     # gpu-operator variant selector — applies when cozystack.gpu-operator is

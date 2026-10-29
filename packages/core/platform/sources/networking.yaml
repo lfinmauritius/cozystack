@@ -146,3 +146,76 @@ spec:
         releaseName: kubeovn
         dependsOn:
         - cilium
+  # cozyplane eBPF CNI + cozyplane-kpr (kube-proxy replacement) for Talos
+  # clusters — NO Cilium and NO kube-proxy. cozyplane owns the datapath and the
+  # CNI conflist; cozyplane-kpr provides in-cluster Services via socket-LB
+  # (importing Cilium's LB control plane, no Cilium agent). One IPAM authority
+  # (cozyplane) over the podCIDR — the coexistence hazard that Cilium's
+  # standalone IPAM created is gone. See docs/kube-proxy-replacement.md.
+  # NOTE: host-firewall and default-network NetworkPolicy that Cilium provided
+  # are not yet replaced (follow-ups); external NodePort + VM-guest ClusterIP
+  # need the increment-3 per-packet fallback.
+  - name: cozyplane
+    dependsOn:
+    - cozystack.gateway-api-crds
+    components:
+    - name: cozyplane
+      path: system/cozyplane
+      valuesFiles:
+      - values.yaml
+      - values-talos.yaml
+      install:
+        privileged: true
+        namespace: cozy-cozyplane
+        releaseName: cozyplane
+        dependsOn: []
+    - name: cozyplane-kpr
+      path: system/cozyplane-kpr
+      valuesFiles:
+      - values.yaml
+      - values-talos.yaml
+      install:
+        privileged: true
+        namespace: cozy-cozyplane
+        releaseName: cozyplane-kpr
+        dependsOn:
+        - cozyplane
+  # Cozyplane remains the only CNI/IPAM authority. Full Cilium is chained after
+  # it for NetworkPolicy, HostFirewall, Services/KPR and Gateway API/Envoy.
+  # The ordering is deliberate: Cozyplane installs its binary with autonomous
+  # conflist writing disabled, then Cilium publishes the sole combined conflist.
+  - name: cozyplane-cilium
+    dependsOn:
+    - cozystack.gateway-api-crds
+    components:
+    - name: cozyplane
+      path: system/cozyplane
+      valuesFiles:
+      - values.yaml
+      - values-talos.yaml
+      - values-chained-cilium.yaml
+      install:
+        privileged: true
+        namespace: cozy-cozyplane
+        releaseName: cozyplane
+        dependsOn: []
+    - name: cilium
+      path: system/cilium
+      valuesFiles:
+      - values.yaml
+      - values-talos.yaml
+      - values-cozyplane.yaml
+      install:
+        privileged: true
+        namespace: cozy-cilium
+        releaseName: cilium
+        dependsOn:
+        - cozyplane
+    - name: cilium-networkpolicy
+      path: system/cilium-networkpolicy
+      install:
+        privileged: true
+        namespace: cozy-cilium
+        releaseName: cilium-networkpolicy
+        dependsOn:
+        - cilium

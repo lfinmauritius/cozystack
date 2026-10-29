@@ -5,6 +5,16 @@ metadata:
   namespace: cozy-cilium
 data:
   cni-config: |-
+    {{- if .Values.cozyplaneChaining.enabled }}
+    {
+      "cniVersion": "1.0.0",
+      "name": "cozyplane",
+      "plugins": [
+        { "type": "cozyplane", "mtu": {{ .Values.cozyplaneChaining.mtu }} },
+        { "type": "cilium-cni", "chaining-mode": "generic-veth" }
+      ]
+    }
+    {{- else }}
     {
       "name": "generic-veth",
       "cniVersion": "0.3.1",
@@ -27,3 +37,4 @@ data:
         }
       ]
     }
+    {{- end }}

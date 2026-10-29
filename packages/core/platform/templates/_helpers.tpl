@@ -219,7 +219,12 @@ cozystack-scheduler (emitted with its own variant in both branches)
 */}}
 {{- define "cozystack.platform.system.common-packages" -}}
 {{- $root := . -}}
-{{- if not (include "cozystack.platform.slim" $root) -}}
+{{- $networkingVariant := $root.Values.bundles.system.networkingVariant | default "kubeovn-cilium" -}}
+{{- /* The kube-ovn control plane (webhook, plunger) does not run on the slim
+       variants nor on the cozyplane ones, which run cozyplane instead of
+       kube-ovn; a fail-closed kube-ovn admission webhook there would block
+       resource creation. */ -}}
+{{- if not (or (include "cozystack.platform.slim" $root) (has $networkingVariant (list "cozyplane" "cozyplane-cilium"))) -}}
 {{include "cozystack.platform.package.default" (list "cozystack.kubeovn-webhook" $root) }}
 {{include "cozystack.platform.package.default" (list "cozystack.kubeovn-plunger" $root) }}
 {{- end }}
@@ -232,8 +237,12 @@ cozystack-scheduler (emitted with its own variant in both branches)
        SecurityGroups, so it only makes sense where Cilium runs. Keeping it here with the
        other data-plane packages (rather than in the variant-agnostic body of system.yaml)
        keeps it out of the isp-hosted (networking=noop) variant, which never calls
-       common-packages and has no cilium.io CRD for the controller to watch. */ -}}
+       common-packages and has no cilium.io CRD for the controller to watch.
+       The cozyplane variants own the whole sdn.cozystack.io group, so the
+       controller would collide with them there. */ -}}
+{{- if not (has $networkingVariant (list "cozyplane" "cozyplane-cilium")) }}
 {{include "cozystack.platform.package.default" (list "cozystack.securitygroup-controller" $root) }}
+{{- end }}
 {{- end }}
 
 {{/*
