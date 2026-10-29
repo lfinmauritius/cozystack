@@ -1,0 +1,216 @@
+# One tenant API distribution per regional cluster. Never switch in-place.
+api:
+  mode: aggregated
+
+# Container image for all cozyplane components (agent, CNI plugin, controller).
+# Digest-pinned (no floating tag). Built and published by .github/workflows/
+# release.yml on every push to main; see docs/packaging.md for how the digest is
+# refreshed and why pinning it does not change it.
+image: ghcr.io/lllamnyp/cozyplane@sha256:55132be06a41a1edf4a57f2120d02996f3c6ffb98ab553f4c1dda581fec257d4
+imagePullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Pod MTU (underlay MTU minus Geneve overhead, ~50 bytes).
+mtu: 1450
+
+# Geneve UDP destination port. Override (e.g. 6082) only to coexist with another
+# overlay still holding 6081 on the node.
+genevePort: 6081
+
+# CNI conflist filename written to /etc/cni/net.d. Lower names sort first; use a
+# low prefix (e.g. "00-cozyplane.conflist") to win over a co-installed CNI such
+# as Cilium (which ships 05-cilium.conflist).
+cniConfName: "10-cozyplane.conflist"
+writeCNIConf: true
+
+# Kube-apiserver endpoint the hostNetwork agent/responder dial. Empty = the
+# in-cluster kubernetes.default ClusterIP (10.96.0.1) — correct once a service
+# proxy serves it. When cozyplane is the CNI AND there is no kube-proxy, that
+# ClusterIP is unserved until cozyplane-kpr (which needs the agent) is up, a
+# bootstrap cycle — so point the agent at a real endpoint (Talos: KubePrism
+# localhost:7445).
+kubeApiServer:
+  host: ""
+  port: ""
+
+# The cluster DNS domain (kubelet's clusterDomain) — the zone the split-horizon
+# resolver answers authoritatively for VPC pods. Empty (the default)
+# autodetects it from the resolver's own kubelet-written search path (the
+# DaemonSet runs ClusterFirstWithHostNet, so the cluster domain is present
+# despite hostNetwork); set explicitly only to override.
+clusterDomain: ""
+
+# Cluster networking facts for pod egress to the outside world. Not reliably
+# discoverable in-cluster, so declared here.
+egress:
+  # Router for connected external IPv4 pools on a secondary link. Empty keeps
+  # the first-host convention. An explicit FIB gateway always takes priority.
+  floatingNextHopIPv4: ""
+  # The cluster pod supernet(s), comma-separated for dual-stack (e.g.
+  # "10.244.0.0/16,fd00:10:244::/56"). Enables the cluster-egress masquerade
+  # (pods get an off-cluster return path) and is denied to VPC tenants at
+  # their gateways. Empty disables both.
+  clusterCIDR: "10.244.0.0/16"
+  # Blocks of clusterCIDR no new pod address is drawn from, for a platform
+  # reservation such as Cozystack's Cilium router block (the last /21 of the
+  # pod CIDR): ["10.244.248.0/21"]. Pods already holding an address there keep
+  # it until they are recreated.
+  podCIDRExclude: []
+  # Masquerade implementation: "bpf" (eBPF SNAT at the uplink, no netfilter,
+  # both families), "iptables" (legacy kernel rule, v4 only), or "off".
+  masquerade: "bpf"
+  # The Service CIDR, denied to VPC tenants at their gateways.
+  serviceCIDR: "10.96.0.0/16"
+  # Cluster DNS ClusterIP; the one cluster-internal door a VPC gateway opens
+  # (:53 only), so tenant pods resolve with a stock resolv.conf.
+  clusterDNS: "10.96.0.10"
+  # Additional cluster-internal networks VPC tenants must not reach through
+  # their gateways (e.g. the node/management network). Also feeds the managed-VPN
+  # route-CIDR deny-set — include the node network here so it is covered.
+  internalCIDRs: []
+
+# Managed VPN (issue #6, docs/vpn.md). The controller runs tunnel appliances for
+# VPNGateway/VPNConnection; these bound their placement and per-tenant scale.
+# Every appliance exposes per-connection metrics on the named `vpn-metrics`
+# port. When the VictoriaMetrics Operator VMPodScrape CRD is installed, this
+# chart automatically registers all `app=cozyplane-vpn-gateway` pods for scrape.
+vpn:
+  # Comma-separated "key=value" labels selecting a dedicated gateway node pool.
+  gatewayNodeSelector: ""
+  # Optional taint key tolerated with Exists/NoSchedule.
+  gatewayTolerationKey: ""
+  # Zero uses the controller defaults.
+  maxGatewaysPerNamespace: 0
+  maxConnectionsPerGateway: 0
+  # Opt in after the kubelet admits net.ipv4.ip_forward and
+  # net.ipv6.conf.all.forwarding as pod sysctls. Drops privileged mode and keeps
+  # only NET_ADMIN, NET_RAW and NET_BIND_SERVICE.
+  hardenedAppliance: false
+  # Dedicated PodSecurity-exempt class. Use together with hardenedAppliance;
+  # the operator must configure admission exemption and kubelet sysctl admission.
+  runtimeClassName: ""
+  runtimeClass:
+    # Create the runc RuntimeClass and its appliance-only admission guard.
+    # Requires Kubernetes >= 1.30, a name and hardenedAppliance=true.
+    create: false
+  # Prometheus-compatible VPN metrics are exposed by every tunnel appliance on
+  # its named vpn-metrics port. Resources below are rendered only when their
+  # respective operator CRDs are installed in the cluster.
+  observability:
+    podScrape:
+      # Keep appliance discovery on by default when VictoriaMetrics is present.
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      # Match the installation's VMAgent podScrapeSelector, if it has one.
+      additionalLabels: {}
+    rules:
+      enabled: true
+      # Match the installation's VMAlert ruleSelector, if it has one.
+      additionalLabels: {}
+      # Idle tunnels are valid for many installations, so this alert is opt-in.
+      noTraffic:
+        enabled: false
+        window: 30m
+    dashboard:
+      enabled: true
+      additionalLabels: {}
+      # Keep the operator's namespace boundary unless explicitly configured.
+      allowCrossNamespaceImport: false
+      # Empty matches Grafana instances in this release's namespace. When
+      # Grafana is elsewhere, opt in above and select the intended instance.
+      instanceSelector: {}
+
+# Observability (docs/observability.md). ALL OFF BY DEFAULT, matching
+# Cozystack's own posture (its Hubble ships disabled by default). Turn on only
+# what you want; each part is independent.
+observability:
+  # Per-flow events with verdicts and drop reasons: the flow_events ring buffer
+  # + flow_seen LRU in the datapath, the raw /flows loopback endpoint (read via
+  # cozyplane-flowctl), and the cozyplane_flow_* / cozyplane_flows_total series
+  # on each agent's :9411/metrics. Enabling adds ~14MiB of map memlock per node
+  # (visible in cozyplane_bpf_map_memlock_bytes).
+  flows: false
+  # DNS metrics from the split-horizon resolver: cozyplane_dns_{queries,
+  # responses}_total on the responder's :9413/metrics. Cheap (no datapath), but
+  # off by default so the node exposes no extra port unless asked.
+  dnsMetrics: false
+
+agent:
+  # Bind address for the per-VPC Prometheus metrics (/metrics). The kubelet
+  # resolves $(HOST_IP) to the node's primary InternalIP, so in-cluster
+  # Prometheus scrapes the agent pods on :9411 as usual (hostNetwork: pod IP ==
+  # host IP) while any other node address — a public one included — serves
+  # nothing. The agent brackets the host itself, so this is also correct when
+  # that primary address is IPv6; only the primary FAMILY is served, though, so
+  # nothing listens on the other family's node address. ":9411" restores
+  # listening on every address; "" disables metrics. See README.md § Upgrading.
+  metricsBindAddress: "$(HOST_IP):9411"
+  # Delegated authn/authz on /metrics (TokenReview + SubjectAccessReview against
+  # the kube-apiserver): the scraper sends its ServiceAccount token — a standard
+  # in-cluster prometheus/vmagent scrape with bearerTokenFile, plain HTTP — and
+  # that ServiceAccount needs `get` on nonResourceURL /metrics, so bind the
+  # cozyplane-metrics-reader ClusterRole to it. false serves /metrics
+  # unauthenticated to anything that can reach the bind address.
+  metricsSecure: true
+  priorityClassName: system-node-critical
+  resources:
+    requests:
+      cpu: 50m
+      # The eBPF maps are charged to the agent's memory cgroup, and most of them
+      # are PREALLOCATED at load: the LRU conntrack and service maps alone
+      # (ct_fwd/ct_rev/svc_fwd/svc_rev at 262k entries each, np_ct at 131k) come
+      # to ~100MB+ before the Go heap. Request enough that the scheduler knows.
+      memory: 192Mi
+    limits:
+      # Sized for the same preallocated map footprint as the request above, with
+      # headroom for new maps — not for the Go heap.
+      memory: 512Mi
+
+controller:
+  # Optional distroless control-plane image; empty uses the networking image.
+  # Agent and managed gateway image arguments always retain top-level image.
+  image: ""
+  replicas: 1
+  priorityClassName: system-cluster-critical
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+# The export ValidatingAdmissionPolicy that gates VPCBinding creation on the
+# 'export' verb of the referenced VPC. Requires Kubernetes >= 1.30. Disable only
+# if your cluster predates VAP (then VPCBinding/VPCPeering creation is governed
+# by plain create RBAC alone, with no export/peer verb check). Only relevant in
+# CRD mode: the aggregated apiserver enforces both verbs in its strategies.
+exportPolicy:
+  enabled: true
+
+# CRDs for the LOCAL group (local.sdn.cozystack.io): underlay IPAM (FabricIP).
+# This is the layer beneath everything — it must work before cert-manager,
+# before etcd, and before cozyplane's own aggregated apiserver, all of which run
+# as default-network pods.
+#
+# Tenant kinds use the explicit api.mode choice. CRD mode installs eleven
+# tenant CRDs and fail-closed admission; aggregated mode uses the separate
+# cozyplane-apiserver chart. Never install both for the same regional cluster.
+#
+# Disable only if you install these CRDs out-of-band.
+crds:
+  enabled: true
+
+# CRD admission TLS uses cert-manager by default. An operator-provided Secret
+# requires its public CA bundle as well; skipping TLS verification is unsupported.
+admission:
+  replicas: 2
+  tls:
+    existingSecret: ""
+    caBundle: ""
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 256Mi

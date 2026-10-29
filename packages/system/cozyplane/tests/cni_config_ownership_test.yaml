@@ -1,0 +1,34 @@
+suite: Cozyplane CNI configuration ownership
+templates:
+  - templates/agent.yaml
+release:
+  name: cozyplane
+  namespace: cozy-cozyplane
+values:
+  - ../values-chained-cilium.yaml
+tests:
+  - it: installs the CNI binary without writing a standalone conflist
+    documentSelector:
+      path: kind
+      value: DaemonSet
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].args
+          content: cp -f /opt/cni/bin/cozyplane /opt/cni/bin/host-local /opt/cni/bin/loopback /host/opt/cni/bin/
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --write-cni-conf=false
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --write-cni-conf=true
+
+  - it: keeps standalone Cozyplane behavior backward compatible
+    documentSelector:
+      path: kind
+      value: DaemonSet
+    set:
+      cniConfEnabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --write-cni-conf=true
