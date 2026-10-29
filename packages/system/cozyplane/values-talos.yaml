@@ -4,6 +4,7 @@
 # cozyplane is the sole CNI; its conflist sorts first (00-) so kubelet uses it as
 # the primary CNI over any co-installed one.
 cniConfName: "00-cozyplane.conflist"
+cniConfEnabled: true
 
 # Talos runs KubePrism (a node-local apiserver load balancer) on localhost:7445.
 # The hostNetwork agent/responder dial it, so they reach the apiserver during

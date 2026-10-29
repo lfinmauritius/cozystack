@@ -180,3 +180,42 @@ spec:
         releaseName: cozyplane-kpr
         dependsOn:
         - cozyplane
+  # Cozyplane remains the only CNI/IPAM authority. Full Cilium is chained after
+  # it for NetworkPolicy, HostFirewall, Services/KPR and Gateway API/Envoy.
+  # The ordering is deliberate: Cozyplane installs its binary with autonomous
+  # conflist writing disabled, then Cilium publishes the sole combined conflist.
+  - name: cozyplane-cilium
+    dependsOn:
+    - cozystack.gateway-api-crds
+    components:
+    - name: cozyplane
+      path: system/cozyplane
+      valuesFiles:
+      - values.yaml
+      - values-talos.yaml
+      - values-chained-cilium.yaml
+      install:
+        privileged: true
+        namespace: cozy-cozyplane
+        releaseName: cozyplane
+        dependsOn: []
+    - name: cilium
+      path: system/cilium
+      valuesFiles:
+      - values.yaml
+      - values-talos.yaml
+      - values-cozyplane.yaml
+      install:
+        privileged: true
+        namespace: cozy-cilium
+        releaseName: cilium
+        dependsOn:
+        - cozyplane
+    - name: cilium-networkpolicy
+      path: system/cilium-networkpolicy
+      install:
+        privileged: true
+        namespace: cozy-cilium
+        releaseName: cilium-networkpolicy
+        dependsOn:
+        - cilium

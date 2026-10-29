@@ -1,0 +1,48 @@
+cilium:
+  cni:
+    chainingMode: generic-veth
+    # Read the platform-owned ConfigMap, write it as 05-cilium.conflist, and
+    # quarantine every other conflist so an old standalone CNI cannot bypass
+    # the Cozyplane -> Cilium chain.
+    customConf: false
+    exclusive: true
+    configMap: cni-configuration
+  routingMode: native
+  kubeProxyReplacement: true
+  # Socket LB only for host-namespace clients: pod traffic keeps its original
+  # ClusterIP so Cozyplane can steer VPC DNS and ServiceVIPs before Cilium.
+  socketLB:
+    enabled: true
+    hostNamespaceOnly: true
+  enableIPv4Masquerade: false
+  enableIPv6Masquerade: false
+  enableIdentityMark: false
+  healthChecking: false
+  endpointHealthChecking:
+    enabled: false
+  daemon:
+    enableSourceIPVerification: false
+  operator:
+    unmanagedPodWatcher:
+      restart: false
+  hostFirewall:
+    enabled: true
+  envoy:
+    enabled: true
+  gatewayAPI:
+    enabled: true
+  hubble:
+    enabled: false
+  ipam:
+    mode: kubernetes
+  # Only the listed devices: detection would also claim Cozyplane pod veths
+  # (cph*) and attach host programs (from/to_netdev) to them, breaking pods.
+  forceDeviceDetection: false
+  devices:
+    - eth0
+    - eth1
+    - cozyplane0
+
+cozyplaneChaining:
+  enabled: true
+  mtu: 1450

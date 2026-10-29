@@ -44,3 +44,9 @@ cilium:
   operator:
     rollOutPods: true
     replicas: 1
+
+# Root-chart switch for the platform-owned CNI ConfigMap. Existing variants
+# retain the kube-ovn chain; cozyplane-cilium overrides this in its values file.
+cozyplaneChaining:
+  enabled: false
+  mtu: 1450

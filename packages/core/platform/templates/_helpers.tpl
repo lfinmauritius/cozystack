@@ -71,7 +71,7 @@ Does NOT include: networking (variant differs), linstor (talos.enabled differs)
        - securitygroup-controller: projects sdn.cozystack.io SecurityGroups onto
          CiliumNetworkPolicy (no such CRD here → crash), AND collides with
          cozyplane, which owns the whole sdn.cozystack.io group. */ -}}
-{{- if ne $networkingVariant "cozyplane" }}
+{{- if not (has $networkingVariant (list "cozyplane" "cozyplane-cilium")) }}
 {{include "cozystack.platform.package.default" (list "cozystack.kubeovn-webhook" $root) }}
 {{include "cozystack.platform.package.default" (list "cozystack.kubeovn-plunger" $root) }}
 {{include "cozystack.platform.package.default" (list "cozystack.multus" $root) }}

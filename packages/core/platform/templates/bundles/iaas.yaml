@@ -162,7 +162,7 @@
        cozyplane variant runs neither and provides VPC tenancy through its own
        sdn.cozystack.io model, so skip it here (otherwise its Package hangs on a
        multus dependency that the variant never installs). */ -}}
-{{- if ne (.Values.bundles.system.networkingVariant | default "kubeovn-cilium") "cozyplane" }}
+{{- if not (has (.Values.bundles.system.networkingVariant | default "kubeovn-cilium") (list "cozyplane" "cozyplane-cilium")) }}
 {{include "cozystack.platform.package" (list "cozystack.virtualprivatecloud-application" "kubevirt" $) }}
 {{- end }}
 {{include "cozystack.platform.package" (list "cozystack.vm-disk-application" "kubevirt" $) }}

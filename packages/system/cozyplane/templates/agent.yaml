@@ -54,6 +54,12 @@ rules:
   - apiGroups: ["sdn.cozystack.io"]
     resources: ["vpcgateways"]
     verbs: ["get", "list", "watch"]
+  # VPNGateways: the agent reads status.routes and merges the connection-derived
+  # remote CIDRs into the same vpc_routes table it builds from VPCGateway routes
+  # (issue #6, docs/vpn.md §3.2).
+  - apiGroups: ["sdn.cozystack.io"]
+    resources: ["vpngateways"]
+    verbs: ["get", "list", "watch"]
   # VPCPeering halves: the agent programs the peers map from mutually-matched
   # specs (not status), so it only needs to observe them.
   - apiGroups: ["sdn.cozystack.io"]
@@ -84,12 +90,6 @@ rules:
   - apiGroups: ["sdn.cozystack.io"]
     resources: ["floatingips"]
     verbs: ["get", "list", "watch"]
-  # ExternalPools: the agent ensures the datapath serves every pool's link on
-  # every node — LB/NodePort frontends arrive wherever the provider attracts
-  # them, and a DSR reply must leave by that link (docs/lb-ingress.md).
-  - apiGroups: ["sdn.cozystack.io"]
-    resources: ["externalpools"]
-    verbs: ["get", "list", "watch"]
   # ServiceVIPs: the agent programs the svc_vips datapath map from them, the
   # resolver answers attached ClusterIP services with the VIP, and the CNI
   # plugin counts them as used addresses when claiming a Port IP.
@@ -98,7 +98,9 @@ rules:
     verbs: ["get", "list", "watch"]
   # The split-horizon resolver (responder container) answers headless Services
   # annotated into a VPC from their EndpointSlices; the agent reads the
-  # kube-system/kube-dns Service to discover the cluster DNS address.
+  # kube-system/kube-dns Service to discover the cluster DNS address; and the
+  # LB-uplink watcher ensures the datapath serves the link carrying every
+  # status.loadBalancer.ingress address (docs/external-addresses.md §9).
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch"]
@@ -166,6 +168,7 @@ spec:
             - "--mtu={{ .Values.mtu }}"
             - "--geneve-port={{ .Values.genevePort }}"
             - "--cni-conf-name={{ .Values.cniConfName }}"
+            - "--write-cni-conf={{ .Values.cniConfEnabled }}"
             {{- if .Values.egress.clusterCIDR }}
             # Cluster-egress masquerade: pod traffic leaving the cluster is
             # SNATed to the node address, giving pods an off-cluster return path.
@@ -177,6 +180,10 @@ spec:
             # Cluster-internal CIDRs a floating pod's public-IP egress skips
             # (routed to the gateway instead, which proxies DNS / denies the rest).
             - "--internal-cidrs={{ join "," $internal }}"
+            {{- end }}
+            {{- if .Values.observability.flows }}
+            # Flow observability (docs/observability.md): flow events + /flows.
+            - "--flows=true"
             {{- end }}
           ports:
             # Per-VPC traffic metrics (#2), Prometheus text at /metrics.
@@ -224,11 +231,23 @@ spec:
           image: {{ .Values.image }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: ["/usr/local/bin/cozyplane-responder"]
+          {{- if .Values.observability.dnsMetrics }}
+          ports:
+            # DNS observability (docs/observability.md §D): Prometheus text at
+            # /metrics — bounded, address-free aggregates (qtype/rcode by VPC).
+            - name: dns-metrics
+              containerPort: 9413
+              hostPort: 9413
+          {{- end }}
           env:
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            {{- if .Values.observability.dnsMetrics }}
+            - name: COZYPLANE_DNS_METRICS
+              value: "1"
+            {{- end }}
             {{- if .Values.kubeApiServer.host }}
             - name: KUBERNETES_SERVICE_HOST
               value: {{ .Values.kubeApiServer.host | quote }}

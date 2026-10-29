@@ -1,0 +1,78 @@
+suite: cozyplane CNI chaining
+templates:
+  - templates/cni.yaml
+  - charts/cilium/templates/cilium-configmap.yaml
+release:
+  name: cilium
+  namespace: cozy-cilium
+values:
+  - ../values-cozyplane.yaml
+tests:
+  - it: renders one fail-closed cozyplane then cilium chain
+    template: templates/cni.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: cni-configuration
+      - equal:
+          path: data.cni-config
+          value: |-
+            {
+              "cniVersion": "1.0.0",
+              "name": "cozyplane",
+              "plugins": [
+                { "type": "cozyplane", "mtu": 1450 },
+                { "type": "cilium-cni", "chaining-mode": "generic-veth" }
+              ]
+            }
+      - notMatchRegex:
+          path: data.cni-config
+          pattern: 'kube-ovn|portmap'
+
+  - it: keeps standalone defaults backward compatible
+    template: templates/cni.yaml
+    set:
+      cozyplaneChaining.enabled: false
+    asserts:
+      - matchRegex:
+          path: data.cni-config
+          pattern: '"type": "kube-ovn"[\s\S]*"type": "cilium-cni"'
+      - notMatchRegex:
+          path: data.cni-config
+          pattern: '"type": "cozyplane"'
+
+  - it: configures Cilium as the chained policy and service layer
+    template: charts/cilium/templates/cilium-configmap.yaml
+    asserts:
+      - equal:
+          path: data.custom-cni-conf
+          value: "false"
+      - equal:
+          path: data.cni-exclusive
+          value: "true"
+      - equal:
+          path: data.cni-chaining-mode
+          value: generic-veth
+      - equal:
+          path: data.ipam
+          value: kubernetes
+      - equal:
+          path: data.enable-health-checking
+          value: "false"
+      - equal:
+          path: data.enable-endpoint-health-checking
+          value: "false"
+      - equal:
+          path: data.enable-host-firewall
+          value: "true"
+      - equal:
+          path: data.enable-gateway-api
+          value: "true"
+      - equal:
+          path: data.enable-hubble
+          value: "false"
+      - equal:
+          path: data.devices
+          value: eth0 cozyplane0

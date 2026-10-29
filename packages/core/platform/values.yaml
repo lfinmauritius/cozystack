@@ -42,6 +42,8 @@ bundles:
     #   "kubeovn-cilium" — KubeOVN fabric + Cilium (default)
     #   "cozyplane"      — cozyplane eBPF CNI + cozyplane-kpr socket-LB KPR
     #                      (no Cilium, no kube-proxy)
+    #   "cozyplane-cilium" - cozyplane CNI/IPAM chained into full Cilium;
+    #                         Cilium alone owns Services/KPR and Gateway API
     networkingVariant: "kubeovn-cilium"
   iaas:
     enabled: false

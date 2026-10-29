@@ -1,0 +1,104 @@
+suite: cozyplane-cilium networking ownership and exclusions
+templates:
+  - templates/sources.yaml
+  - templates/bundles/system.yaml
+release:
+  name: cozystack
+  namespace: cozy-system
+tests:
+  - it: defines the chained variant without cozyplane-kpr
+    template: templates/sources.yaml
+    documentSelector:
+      path: metadata.name
+      value: cozystack.networking
+    asserts:
+      - equal:
+          path: spec.variants[7].name
+          value: cozyplane-cilium
+      - lengthEqual:
+          path: spec.variants[7].components
+          count: 3
+      - equal:
+          path: spec.variants[7].components[0].name
+          value: cozyplane
+      - contains:
+          path: spec.variants[7].components[0].valuesFiles
+          content: values-chained-cilium.yaml
+      - equal:
+          path: spec.variants[7].components[1].name
+          value: cilium
+      - contains:
+          path: spec.variants[7].components[1].valuesFiles
+          content: values-cozyplane.yaml
+      - contains:
+          path: spec.variants[7].components[1].install.dependsOn
+          content: cozyplane
+      - equal:
+          path: spec.variants[7].components[2].name
+          value: cilium-networkpolicy
+      - notContains:
+          path: spec.variants[7].components
+          content:
+            name: cozyplane-kpr
+
+  - it: selects cozyplane-cilium
+    template: templates/bundles/system.yaml
+    documentSelector:
+      path: metadata.name
+      value: cozystack.networking
+    set:
+      bundles.system.enabled: true
+      bundles.system.variant: isp-full
+      bundles.system.networkingVariant: cozyplane-cilium
+    asserts:
+      - equal:
+          path: spec.variant
+          value: cozyplane-cilium
+
+  - it: omits incompatible packages and keeps the Cozyplane API server
+    template: templates/bundles/system.yaml
+    set:
+      bundles.system.enabled: true
+      bundles.system.variant: isp-full
+      bundles.system.networkingVariant: cozyplane-cilium
+    asserts:
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.multus
+        not: true
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.kubeovn-webhook
+        not: true
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.kubeovn-plunger
+        not: true
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.securitygroup-controller
+        not: true
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.cozyplane-apiserver
+          any: true
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.cozyplane-cilium-crds
+        not: true
+
+  - it: rejects an unknown networking variant
+    template: templates/bundles/system.yaml
+    set:
+      bundles.system.enabled: true
+      bundles.system.variant: isp-full
+      bundles.system.networkingVariant: cozyplane-cilium-kpr
+    asserts:
+      - failedTemplate:
+          errorMessage: 'bundles.system.networkingVariant must be "kubeovn-cilium", "cozyplane" or "cozyplane-cilium", got "cozyplane-cilium-kpr"'

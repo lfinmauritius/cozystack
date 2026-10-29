@@ -1,0 +1,3 @@
+# Cilium owns /etc/cni/net.d/05-cilium.conflist in this mode. Cozyplane still
+# installs its CNI binary and agent, but must never expose an unchained bypass.
+cniConfEnabled: false
