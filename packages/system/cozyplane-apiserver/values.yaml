@@ -5,7 +5,7 @@ api:
 # Container image (shared with the cozyplane chart — the apiserver binary lives
 # in the same image). Digest-pinned (no floating tag); keep it equal to
 # chart/cozyplane/values.yaml's pin. See docs/packaging.md.
-image: 192.168.100.1:5000/b195/cozyplane@sha256:c29d253307c876a067ec1870e39f341678227ec07cce0e08b7a772f6ef44c9fd
+image: 192.168.100.1:5000/b195/cozyplane@sha256:4ce046803ccdd249c79213da289b473c0344a55147624ccfded5351361821a22
 imagePullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -44,8 +44,9 @@ etcd:
     # evicted member onto a survivor and it stays there after uncordon: two
     # members on one node, and losing that node loses quorum (the whole
     # sdn.cozystack.io API). Required leaves the evicted member Pending while
-    # the other two keep quorum. Override (preferred, or {}) where replicas
-    # exceed schedulable nodes. Applies to newly created members only.
+    # the other two keep quorum. Where replicas exceed schedulable nodes, set
+    # `affinity: null` (Helm merges maps: `{}` or a preferred rule would keep
+    # the required one). Applies to newly created members only.
     affinity:
       podAntiAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
