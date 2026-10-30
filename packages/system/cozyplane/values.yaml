@@ -6,7 +6,7 @@ api:
 # Digest-pinned (no floating tag). Built and published by .github/workflows/
 # release.yml on every push to main; see docs/packaging.md for how the digest is
 # refreshed and why pinning it does not change it.
-image: 192.168.100.1:5000/b195/cozyplane@sha256:e64ac814a28241e9ffad41b70d22f951650bdd82250cd7ad0ae99b7845f3295a
+image: 192.168.100.1:5000/b195/cozyplane@sha256:c29d253307c876a067ec1870e39f341678227ec07cce0e08b7a772f6ef44c9fd
 imagePullPolicy: IfNotPresent
 imagePullSecrets: []
 
