@@ -6,7 +6,7 @@ api:
 # Digest-pinned (no floating tag). Built and published by .github/workflows/
 # release.yml on every push to main; see docs/packaging.md for how the digest is
 # refreshed and why pinning it does not change it.
-image: 192.168.100.1:5000/b195/cozyplane@sha256:4ce046803ccdd249c79213da289b473c0344a55147624ccfded5351361821a22
+image: 192.168.100.1:5000/b195/cozyplane@sha256:8c606ce0d00546bae049bac084fa479189c8634b98674c5822918bbfd041f203
 imagePullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -187,7 +187,9 @@ controller:
       cpu: 10m
       memory: 64Mi
     limits:
-      memory: 128Mi
+      # Headroom on the lab: before the Helm-Secret cache fix (eb3bb37) the
+      # controller was OOM-killed at 128Mi right after the v1.7.0 upgrade.
+      memory: 256Mi
 
 # The export ValidatingAdmissionPolicy that gates VPCBinding creation on the
 # 'export' verb of the referenced VPC. Requires Kubernetes >= 1.30. Disable only

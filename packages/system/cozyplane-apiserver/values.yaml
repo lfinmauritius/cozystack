@@ -5,7 +5,7 @@ api:
 # Container image (shared with the cozyplane chart — the apiserver binary lives
 # in the same image). Digest-pinned (no floating tag); keep it equal to
 # chart/cozyplane/values.yaml's pin. See docs/packaging.md.
-image: 192.168.100.1:5000/b195/cozyplane@sha256:4ce046803ccdd249c79213da289b473c0344a55147624ccfded5351361821a22
+image: 192.168.100.1:5000/b195/cozyplane@sha256:8c606ce0d00546bae049bac084fa479189c8634b98674c5822918bbfd041f203
 imagePullPolicy: IfNotPresent
 imagePullSecrets: []
 
