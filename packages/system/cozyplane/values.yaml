@@ -57,6 +57,12 @@ egress:
   # it until they are recreated.
   podCIDRExclude:
   - 10.244.248.0/21
+  # Node podCIDRs (kube-controller-manager slices 10.244.N.0/24): chained Cilium
+  # runs ipam.mode kubernetes and takes its router, health and Gateway API
+  # Ingress addresses from them, so Cozyplane must never hand those out.
+  # ponytail: covers 16 nodes; beyond, widen it or move Cilium to cluster-pool
+  # on the last /21 (what upstream did for the kube-ovn variants, dc362fa59).
+  - 10.244.0.0/20
   # Masquerade implementation: "bpf" (eBPF SNAT at the uplink, no netfilter,
   # both families), "iptables" (legacy kernel rule, v4 only), or "off".
   masquerade: "bpf"
