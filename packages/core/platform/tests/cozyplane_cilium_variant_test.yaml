@@ -55,7 +55,7 @@ tests:
           path: spec.variant
           value: cozyplane-cilium
 
-  - it: omits incompatible packages and keeps the Cozyplane API server
+  - it: keeps Multus and the Cozyplane API server, omits kube-ovn and securitygroup-controller
     template: templates/bundles/system.yaml
     set:
       bundles.system.enabled: true
@@ -66,21 +66,24 @@ tests:
           apiVersion: cozystack.io/v1alpha1
           kind: Package
           name: cozystack.multus
-        not: true
+          any: true
       - containsDocument:
           apiVersion: cozystack.io/v1alpha1
           kind: Package
           name: cozystack.kubeovn-webhook
+          any: true
         not: true
       - containsDocument:
           apiVersion: cozystack.io/v1alpha1
           kind: Package
           name: cozystack.kubeovn-plunger
+          any: true
         not: true
       - containsDocument:
           apiVersion: cozystack.io/v1alpha1
           kind: Package
           name: cozystack.securitygroup-controller
+          any: true
         not: true
       - containsDocument:
           apiVersion: cozystack.io/v1alpha1
@@ -91,6 +94,7 @@ tests:
           apiVersion: cozystack.io/v1alpha1
           kind: Package
           name: cozystack.cozyplane-cilium-crds
+          any: true
         not: true
 
   - it: rejects an unknown networking variant
@@ -102,3 +106,27 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: 'bundles.system.networkingVariant must be "kubeovn-cilium", "cozyplane" or "cozyplane-cilium", got "cozyplane-cilium-kpr"'
+
+  - it: refuses the Cilium-less cozyplane variant without an explicit acknowledgement
+    template: templates/bundles/system.yaml
+    set:
+      bundles.system.enabled: true
+      bundles.system.variant: isp-full
+      bundles.system.networkingVariant: cozyplane
+    asserts:
+      - failedTemplate:
+          errorMessage: 'bundles.system.networkingVariant "cozyplane" runs no Cilium: tenant CiliumNetworkPolicy/CiliumClusterwideNetworkPolicy isolation would be installed but not enforced; use "cozyplane-cilium" or set bundles.system.acknowledgeUnenforcedTenantIsolation=true'
+
+  - it: renders the inert Cilium CRDs for cozyplane once acknowledged
+    template: templates/bundles/system.yaml
+    set:
+      bundles.system.enabled: true
+      bundles.system.variant: isp-full
+      bundles.system.networkingVariant: cozyplane
+      bundles.system.acknowledgeUnenforcedTenantIsolation: true
+    asserts:
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.cozyplane-cilium-crds
+          any: true

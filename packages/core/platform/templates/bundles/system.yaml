@@ -227,6 +227,11 @@
        — host-firewall / default-network NetworkPolicy is a follow-up). On the
        Cilium variants the cilium chart provides the CRDs, so skip it there. */ -}}
 {{- if eq (.Values.bundles.system.networkingVariant | default "kubeovn-cilium") "cozyplane" }}
+{{- /* Inert CRDs mean the tenant CiliumNetworkPolicy isolation renders and is
+       enforced by nothing: refuse unless the operator says so explicitly. */ -}}
+{{- if not .Values.bundles.system.acknowledgeUnenforcedTenantIsolation }}
+{{- fail "bundles.system.networkingVariant \"cozyplane\" runs no Cilium: tenant CiliumNetworkPolicy/CiliumClusterwideNetworkPolicy isolation would be installed but not enforced; use \"cozyplane-cilium\" or set bundles.system.acknowledgeUnenforcedTenantIsolation=true" }}
+{{- end }}
 {{include "cozystack.platform.package.default" (list "cozystack.cozyplane-cilium-crds" $) }}
 {{- end }}
 {{- if has (.Values.bundles.system.networkingVariant | default "kubeovn-cilium") (list "cozyplane" "cozyplane-cilium") }}

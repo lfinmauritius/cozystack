@@ -45,6 +45,10 @@ bundles:
     #   "cozyplane-cilium" - cozyplane CNI/IPAM chained into full Cilium;
     #                         Cilium alone owns Services/KPR and Gateway API
     networkingVariant: "kubeovn-cilium"
+    # "cozyplane" ships the Cilium policy CRDs inert: tenant isolation policies
+    # apply but nothing enforces them. The render refuses that variant unless
+    # this is set to true.
+    acknowledgeUnenforcedTenantIsolation: false
   iaas:
     enabled: false
     # gpu-operator variant selector — applies when cozystack.gpu-operator is
