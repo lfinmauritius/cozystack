@@ -1,0 +1,192 @@
+suite: Envoy Gateway proxy isolation CiliumNetworkPolicy
+templates:
+  - templates/isolation.yaml
+  - templates/tenantgateway.yaml
+
+release:
+  name: gateway
+  namespace: tenant-org1
+
+# Every tenant Gateway release renders cozystack-gateway-isolation, whatever
+# its class. It selects only Envoy Gateway proxy pods owned by this release's
+# Gateway, so it is inert for a Cilium Gateway, and it is already in place
+# whenever such pods exist: on a move into or out of an isolated class, for
+# proxies orphaned by turning gateway.internal.enabled off, and if the
+# platform default ever became an Envoy Gateway class. The pods get no traffic
+# from outside the cluster, none from a namespace whose
+# namespace.cozystack.io/gateway label names another tenant (or none), and
+# egress to their backends, the Envoy Gateway controller xDS port and kube-dns.
+
+set:
+  _cluster:
+    solver: dns01
+    expose-ingress: tenant-root
+    issuer-name: letsencrypt-prod
+    gateway-class-name: cilium
+    gateway-tenant-classes: envoy-internal
+    gateway-isolated-classes: envoy-internal
+  _namespace:
+    host: org1.example.org
+
+tests:
+  - it: an isolated class renders the policy
+    template: templates/isolation.yaml
+    set:
+      gatewayClassName: envoy-internal
+    asserts:
+      - hasDocuments:
+          count: 1
+      - containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          name: cozystack-gateway-isolation
+
+  - it: the default (Cilium) class renders the policy too
+    template: templates/isolation.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: cozystack-gateway-isolation
+
+  - it: the publishing tenant renders it too, scoped to its own namespace
+    template: templates/isolation.yaml
+    release:
+      namespace: tenant-root
+    set:
+      _namespace:
+        host: example.org
+    asserts:
+      - equal:
+          path: spec.endpointSelector.matchLabels["gateway.envoyproxy.io/owning-gateway-namespace"]
+          value: tenant-root
+
+  - it: the TenantGateway template no longer carries the policy
+    template: templates/tenantgateway.yaml
+    set:
+      gatewayClassName: envoy-internal
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: kind
+          value: TenantGateway
+
+  - it: selects the proxy pods Envoy Gateway labels with the owning Gateway
+    template: templates/isolation.yaml
+    asserts:
+      - equal:
+          path: spec.endpointSelector
+          value:
+            matchLabels:
+              gateway.envoyproxy.io/owning-gateway-name: cozystack
+              gateway.envoyproxy.io/owning-gateway-namespace: tenant-org1
+
+  - it: denies the world and every namespace not labelled for this tenant
+    template: templates/isolation.yaml
+    asserts:
+      - equal:
+          path: spec.ingressDeny
+          value:
+            - fromEntities:
+                - world
+                - remote-node
+                - ingress
+                - unmanaged
+                - init
+                - health
+            - fromEndpoints:
+                - matchExpressions:
+                    - key: k8s:io.kubernetes.pod.namespace
+                      operator: Exists
+                    - key: k8s:io.cilium.k8s.namespace.labels.namespace.cozystack.io/gateway
+                      operator: NotIn
+                      values:
+                        - tenant-org1
+      - notExists:
+          path: spec.ingress
+
+  - it: opens egress to the backends, the controller xDS port and kube-dns
+    template: templates/isolation.yaml
+    asserts:
+      - equal:
+          path: spec.egress
+          value:
+            - toEndpoints:
+                - matchLabels:
+                    k8s:io.cilium.k8s.namespace.labels.namespace.cozystack.io/gateway: tenant-org1
+                  matchExpressions:
+                    - key: k8s:io.kubernetes.pod.namespace
+                      operator: Exists
+            - toEndpoints:
+                - matchLabels:
+                    k8s:io.kubernetes.pod.namespace: cozy-envoy-gateway
+                    control-plane: envoy-gateway
+              toPorts:
+                - ports:
+                    - port: "18000"
+                      protocol: TCP
+            - toEndpoints:
+                - matchLabels:
+                    k8s:io.kubernetes.pod.namespace: kube-system
+                    k8s-app: kube-dns
+
+  # Same gate as the tenant chart's Cilium policies: a hosted cluster runs
+  # the hosting side's CNI and may have no cilium.io API at all.
+  - it: renders nothing on a hosted bundle without the Cilium API
+    template: templates/isolation.yaml
+    set:
+      _cluster:
+        bundle-name: isp-hosted
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders on a hosted bundle that does serve the Cilium API
+    template: templates/isolation.yaml
+    set:
+      _cluster:
+        bundle-name: isp-hosted-slim
+    capabilities:
+      apiVersions:
+        - cilium.io/v2/CiliumNetworkPolicy
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: refuses an isolated class that is not tenant-selectable
+    template: templates/tenantgateway.yaml
+    set:
+      _cluster:
+        gateway-class-name: envoy-internal
+        gateway-tenant-classes: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: 'gatewayClass="envoy-internal" is isolated \(_cluster.gateway-isolated-classes\) but not tenant-selectable'
+
+  - it: refuses an isolated class on the publishing tenant
+    template: templates/tenantgateway.yaml
+    release:
+      namespace: tenant-root
+    set:
+      _namespace:
+        host: example.org
+      gatewayClassName: envoy-internal
+    asserts:
+      - failedTemplate:
+          errorPattern: 'the publishing tenant \(tenant-root\) cannot use the isolated gatewayClass="envoy-internal"'
+
+  - it: a padded isolated entry still refuses the publishing tenant
+    template: templates/tenantgateway.yaml
+    release:
+      namespace: tenant-root
+    set:
+      _cluster:
+        gateway-isolated-classes: " envoy-internal , other-class "
+      _namespace:
+        host: example.org
+      gatewayClassName: envoy-internal
+    asserts:
+      - failedTemplate:
+          errorPattern: 'cannot use the isolated gatewayClass="envoy-internal"'

@@ -1,0 +1,49 @@
+{{- /*
+  The class INTERNAL tenant Gateways use. A tenant reaches it only once the
+  platform lists it in gateway.tenantSelectableClasses (and, required with
+  it, gateway.isolatedClasses); the per-tenant gateway chart fences its
+  proxy pods with cozystack-gateway-isolation (see README.md).
+
+  The Service carries no MetalLB annotation on purpose: the address pool is
+  chosen by the operator's MetalLB pool serviceSelector on the labels Envoy
+  Gateway stamps on it (gateway.envoyproxy.io/owning-gateway-name and
+  gateway.envoyproxy.io/owning-gateway-namespace).
+*/}}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: envoy-internal
+  namespace: {{ .Release.Namespace }}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        container:
+          image: {{ .Values.proxy.image | quote }}
+          resources:
+            {{- toYaml .Values.proxy.resources | nindent 12 }}
+      envoyService:
+        type: LoadBalancer
+        {{- /* Local keeps the client address, so the gateway chart's
+               CiliumNetworkPolicy sees an outside client as `world`. Cluster
+               would SNAT it to a node address on a cross-node hop. Local is
+               also the upstream default; pinned so that stays true. */}}
+        externalTrafficPolicy: Local
+        {{- /* No NodePort on every node: the address is announced by the
+               load balancer (MetalLB), which does not need one, and a
+               NodePort would expose the internal proxy on each node's
+               address, outside the MetalLB pool the operator chose. */}}
+        allocateLoadBalancerNodePorts: false
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: envoy-internal
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: envoy-internal
+    namespace: {{ .Release.Namespace }}

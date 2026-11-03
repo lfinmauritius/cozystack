@@ -1,0 +1,31 @@
+---
+apiVersion: cozystack.io/v1alpha1
+kind: PackageSource
+metadata:
+  name: cozystack.envoy-gateway
+spec:
+  sourceRef:
+    kind: OCIRepository
+    name: cozystack-packages
+    namespace: cozy-system
+    path: /
+  variants:
+  - name: default
+    # Emitted only when gateway.internal.enabled is true (bundles/system.yaml).
+    # gateway-api-crds: the GatewayClass this package ships, and every Gateway
+    # the controller watches, need the Gateway API CRDs first.
+    dependsOn:
+    - cozystack.networking
+    - cozystack.gateway-api-crds
+    components:
+    - name: envoy-gateway
+      path: system/envoy-gateway
+      install:
+        namespace: cozy-envoy-gateway
+        releaseName: envoy-gateway
+        # The gateway.envoyproxy.io CRDs ship in the chart's crds/ directory,
+        # which Helm never upgrades; without this they stay at first-install
+        # schema while the controller moves on. The vendored chart carries no
+        # Gateway API CRDs (the Makefile drops them), so only Envoy Gateway's
+        # own are replaced.
+        upgradeCRDs: CreateReplace

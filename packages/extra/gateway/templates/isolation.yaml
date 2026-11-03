@@ -1,0 +1,91 @@
+{{- /*
+  Fences the Envoy Gateway proxy pods of this tenant's Gateway. Envoy Gateway
+  in Gateway Namespace Mode runs them in this namespace, labelled with the
+  owning Gateway (the TenantGateway controller names it after the CR:
+  cozystack).
+
+  Rendered for every TenantGateway, whatever its class (the publishing
+  tenant included). It selects no pod at all for a Cilium Gateway, whose
+  Envoy is per node, so it is inert there; and it is already in place
+  whenever such proxy pods exist: while moving out of an isolated class
+  (the old proxy outlives the switch), for proxies orphaned by turning
+  gateway.internal.enabled off, and should an Envoy Gateway class ever
+  become a tenant's class without being listed as isolated.
+
+  The trust anchor is the namespace.cozystack.io/gateway label: the
+  platform writes it (tenant chart, TenantGateway controller) and no tenant
+  role may patch a Namespace. NotIn also matches namespaces that lack the
+  label, which is intended: system namespaces and other organisations are
+  refused alike. The pod-namespace Exists term keeps the selector to pods —
+  without it the NotIn would also match reserved identities such as host
+  (kubelet probes) — and, being a namespace key, stops Cilium from scoping
+  the selector to this namespace on any version. Deny wins over the
+  tenant's own allow-external-communication policy.
+
+  That allow admits the whole `cluster` entity, which also carries Cilium's
+  reserved identities. Every one of them through which another
+  organisation's traffic could arrive is denied by entity: world,
+  remote-node (anything SNATed to another node's address), ingress
+  (Cilium's own shared Envoy), unmanaged, init and health. host stays
+  allowed (the kubelet probes the proxy from its own node), and so does
+  kube-apiserver, which on combined control-plane nodes is the host's own
+  identity.
+
+  Egress has to be granted because the tenant's policies only open world,
+  its own namespace tree and a few platform services: the backends (this
+  organisation and its projects, every namespace whose label names it),
+  the Envoy Gateway controller's xDS server (18000/TCP, TLS + projected
+  ServiceAccount token in this mode; namespace from the cozystack.envoy-gateway
+  PackageSource) and kube-dns, which the proxy needs to resolve the
+  controller's Service name.
+
+  Same gate as the tenant chart's Cilium policies (tenant.ciliumPolicies):
+  a hosted cluster runs the hosting side's CNI and may serve no cilium.io
+  API, where an unconditional policy would fail every gateway release.
+*/}}
+{{- if or (not (has (include "cozy-lib.bundle-name" .) (list "isp-hosted" "isp-hosted-slim"))) (.Capabilities.APIVersions.Has "cilium.io/v2/CiliumNetworkPolicy") }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: cozystack-gateway-isolation
+spec:
+  endpointSelector:
+    matchLabels:
+      gateway.envoyproxy.io/owning-gateway-name: cozystack
+      gateway.envoyproxy.io/owning-gateway-namespace: {{ .Release.Namespace | quote }}
+  ingressDeny:
+  - fromEntities:
+    - world
+    - remote-node
+    - ingress
+    - unmanaged
+    - init
+    - health
+  - fromEndpoints:
+    - matchExpressions:
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: Exists
+      - key: k8s:io.cilium.k8s.namespace.labels.namespace.cozystack.io/gateway
+        operator: NotIn
+        values:
+        - {{ .Release.Namespace | quote }}
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        k8s:io.cilium.k8s.namespace.labels.namespace.cozystack.io/gateway: {{ .Release.Namespace | quote }}
+      matchExpressions:
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: Exists
+  - toEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: cozy-envoy-gateway
+        control-plane: envoy-gateway
+    toPorts:
+    - ports:
+      - port: "18000"
+        protocol: TCP
+  - toEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+{{- end }}

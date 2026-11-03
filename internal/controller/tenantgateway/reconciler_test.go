@@ -9618,8 +9618,12 @@ func TestReconcile_SwitchingBackFromEdgeRestoresTheACMEShape(t *testing.T) {
 	if err := c.Update(context.TODO(), tgw); err != nil {
 		t.Fatalf("switch back: %v", err)
 	}
-	if _, err := r.Reconcile(context.TODO(), req); err != nil {
-		t.Fatalf("http01 reconcile: %v", err)
+	// The class changes too, so the first pass deletes the old Gateway and
+	// the second recreates it (TestReconcile_GatewayClassChangeRecreatesGateway).
+	for _, pass := range []string{"delete", "recreate"} {
+		if _, err := r.Reconcile(context.TODO(), req); err != nil {
+			t.Fatalf("http01 reconcile (%s): %v", pass, err)
+		}
 	}
 
 	gw := &gatewayv1.Gateway{}

@@ -22,6 +22,11 @@ stringData:
     # (a subchart value a template cannot derive from _cluster). Rationale: packages/system/keda.
     keda:
       clusterDomain: {{ .Values.networking.clusterDomain | quote }}
+    {{- /* Same reason for Envoy Gateway (packages/system/envoy-gateway): its
+           proxies dial the controller at envoy-gateway.<ns>.svc.<domain> and
+           certgen mints the xDS serving-cert SANs from the same domain. */}}
+    gateway-helm:
+      kubernetesClusterDomain: {{ .Values.networking.clusterDomain | quote }}
     {{- /*
       The operator builds every in-cluster name it needs from DNS_BASE: the
       securityconfig job target, its own OpenSearch API client URL, the
@@ -207,6 +212,11 @@ stringData:
       {{- if and (ne $rawClassName "") (eq (trim $rawClassName) "") }}
       {{- fail "gateway.className is only whitespace. Leave it unset to use the bundled cilium class, or name a real GatewayClass — resolving a blank value silently would decide TLS termination for every tenant that did not choose." }}
       {{- end }}
+      {{- /* The default is where every tenant that chose nothing lands, the
+             publishing one included: the internal class must never be it. */}}
+      {{- if eq (trim $rawClassName) "envoy-internal" }}
+      {{- fail "gateway.className must not be envoy-internal: every tenant that does not choose a class, the publishing tenant included, would get an internal Gateway. Organisations opt into it through gateway.tenantSelectableClasses." }}
+      {{- end }}
       {{- end }}
       gateway-class-name: {{ $rawClassName | default "" | trim | default "cilium" | quote }}
       {{- /*
@@ -239,8 +249,38 @@ stringData:
       {{- fail (printf "gateway.tenantSelectableClasses entry %q contains a comma; the list travels comma-joined and the name would be split" .) }}
       {{- end }}
       {{- end }}
+      {{- /* An isolated class is one an organisation opts into, so it must
+             be tenant-selectable. Compared trimmed, as the gateway chart
+             reads both lists. */}}
+      {{- $isolatedClasses := .Values.gateway.isolatedClasses | default (list) }}
+      {{- $selectable := list }}
+      {{- range $tenantClasses }}
+      {{- $selectable = append $selectable (trim .) }}
+      {{- end }}
+      {{- range $isolatedClasses }}
+      {{- if not (kindIs "string" .) }}
+      {{- fail (printf "gateway.isolatedClasses must be a list of GatewayClass names, got %v" .) }}
+      {{- end }}
+      {{- if contains "," . }}
+      {{- fail (printf "gateway.isolatedClasses entry %q contains a comma; the list travels comma-joined and the name would be split" .) }}
+      {{- end }}
+      {{- if not (has (trim .) $selectable) }}
+      {{- fail (printf "gateway.isolatedClasses entry %q is not in gateway.tenantSelectableClasses. An isolated class is one an organisation opts into; list it there too." .) }}
+      {{- end }}
+      {{- end }}
       gateway-edge-classes: {{ $edgeClasses | join "," | quote }}
       gateway-tenant-classes: {{ $tenantClasses | join "," | quote }}
+      {{- /* The bundled internal class exists to be isolated: offering it to
+             tenants without the isolation policy would give them a
+             LoadBalancer proxy reachable from every organisation. */}}
+      {{- $isolated := list }}
+      {{- range $isolatedClasses }}
+      {{- $isolated = append $isolated (trim (toString .)) }}
+      {{- end }}
+      {{- if and (has "envoy-internal" $selectable) (not (has "envoy-internal" $isolated)) }}
+      {{- fail "gateway.tenantSelectableClasses lists envoy-internal but gateway.isolatedClasses does not: list it in both, or neither." }}
+      {{- end }}
+      gateway-isolated-classes: {{ $isolatedClasses | join "," | quote }}
       {{- /* Whether the root tenant hosts the platform monitoring stack
              (Tenant/root spec.monitoring). cozystack-basics gates the
              cozy-monitoring -> tenant-root vlinsert/vminsert ExternalName

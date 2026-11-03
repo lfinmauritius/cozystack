@@ -1,0 +1,137 @@
+suite: cozy-envoy-gateway overrides
+release:
+  name: envoy-gateway
+  namespace: cozy-envoy-gateway
+tests:
+  - it: runs the controller in Gateway Namespace Mode without the topology injector
+    template: charts/gateway-helm/templates/envoy-gateway-config.yaml
+    asserts:
+      - matchRegex:
+          path: data["envoy-gateway.yaml"]
+          pattern: '(?m)^\s*deploy:\s*\n\s*type: GatewayNamespace$'
+      - matchRegex:
+          path: data["envoy-gateway.yaml"]
+          pattern: '(?m)^\s*proxyTopologyInjector:\s*\n\s*disabled: true$'
+      - matchRegex:
+          path: data["envoy-gateway.yaml"]
+          pattern: 'shutdownManager:\s*\n\s*image: docker\.io/envoyproxy/gateway:v1\.9\.3@sha256:[0-9a-f]{64}'
+
+  - it: pins the controller image by tag and digest
+    template: charts/gateway-helm/templates/envoy-gateway-deployment.yaml
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^docker\.io/envoyproxy/gateway:v1\.9\.3@sha256:[0-9a-f]{64}$'
+
+  - it: gives the proxies the platform cluster domain to dial the controller
+    template: charts/gateway-helm/templates/envoy-gateway-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBERNETES_CLUSTER_DOMAIN
+            value: cozy.local
+
+  - it: grants the cluster-wide infra role Gateway Namespace Mode needs
+    template: charts/gateway-helm/templates/infra-manager-rbac.yaml
+    asserts:
+      - containsDocument:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          name: envoy-gateway-gateway-helm-cluster-infra-manager
+        documentIndex: 0
+
+  - it: points the envoy-internal class at its EnvoyProxy in the controller namespace
+    template: templates/gatewayclass.yaml
+    documentSelector:
+      path: kind
+      value: GatewayClass
+    asserts:
+      - equal:
+          path: metadata.name
+          value: envoy-internal
+      - equal:
+          path: spec.controllerName
+          value: gateway.envoyproxy.io/gatewayclass-controller
+      - equal:
+          path: spec.parametersRef
+          value:
+            group: gateway.envoyproxy.io
+            kind: EnvoyProxy
+            name: envoy-internal
+            namespace: cozy-envoy-gateway
+
+  - it: runs distroless Envoy behind a plain LoadBalancer Service that keeps client addresses
+    template: templates/gatewayclass.yaml
+    documentSelector:
+      path: kind
+      value: EnvoyProxy
+    asserts:
+      - matchRegex:
+          path: spec.provider.kubernetes.envoyDeployment.container.image
+          pattern: '^docker\.io/envoyproxy/envoy:distroless-v1\.39\.5@sha256:[0-9a-f]{64}$'
+      - equal:
+          path: spec.provider.kubernetes.envoyDeployment.container.resources.requests
+          value:
+            cpu: 100m
+            memory: 128Mi
+      - equal:
+          path: spec.provider.kubernetes.envoyService
+          value:
+            type: LoadBalancer
+            externalTrafficPolicy: Local
+            allocateLoadBalancerNodePorts: false
+
+  # Once a policy selects the controller pod, everything it does not allow is
+  # refused: the proxies' xDS (any namespace, hence the namespace-key term)
+  # and the kubelet probes. Not the ratelimit xDS, Wasm or metrics ports.
+  - it: lets only proxies (xDS) and the kubelet (probes) reach the controller
+    template: templates/networkpolicy.yaml
+    asserts:
+      - containsDocument:
+          apiVersion: cilium.io/v2
+          kind: CiliumNetworkPolicy
+          name: envoy-gateway-controller
+          namespace: cozy-envoy-gateway
+      - equal:
+          path: spec.endpointSelector
+          value:
+            matchLabels:
+              control-plane: envoy-gateway
+              app.kubernetes.io/name: gateway-helm
+              app.kubernetes.io/instance: envoy-gateway
+      - equal:
+          path: spec.ingress
+          value:
+            - fromEndpoints:
+                - matchLabels:
+                    app.kubernetes.io/managed-by: envoy-gateway
+                    app.kubernetes.io/component: proxy
+                  matchExpressions:
+                    - key: k8s:io.kubernetes.pod.namespace
+                      operator: Exists
+              toPorts:
+                - ports:
+                    - port: "18000"
+                      protocol: TCP
+            - fromEntities:
+                - host
+              toPorts:
+                - ports:
+                    - port: "8081"
+                      protocol: TCP
+      - notExists:
+          path: spec.egress
+
+  - it: allows exactly the port the controller Deployment probes
+    template: charts/gateway-helm/templates/envoy-gateway-deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.port
+          value: 8081

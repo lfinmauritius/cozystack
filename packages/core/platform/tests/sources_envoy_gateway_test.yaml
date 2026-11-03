@@ -1,0 +1,35 @@
+suite: envoy-gateway PackageSource
+templates:
+  - templates/sources.yaml
+release:
+  name: cozystack
+  namespace: cozy-system
+tests:
+  # The GatewayClass the chart ships needs the Gateway API CRDs, and its own
+  # gateway.envoyproxy.io CRDs live in crds/, which Helm never upgrades.
+  - it: installs into cozy-envoy-gateway after the Gateway API CRDs and replaces its CRDs on upgrade
+    documentSelector:
+      path: metadata.name
+      value: cozystack.envoy-gateway
+    asserts:
+      - equal:
+          path: kind
+          value: PackageSource
+      - contains:
+          path: spec.variants[0].dependsOn
+          content: cozystack.gateway-api-crds
+      - contains:
+          path: spec.variants[0].dependsOn
+          content: cozystack.networking
+      - equal:
+          path: spec.variants[0].components[0].path
+          value: system/envoy-gateway
+      - equal:
+          path: spec.variants[0].components[0].install.namespace
+          value: cozy-envoy-gateway
+      - equal:
+          path: spec.variants[0].components[0].install.releaseName
+          value: envoy-gateway
+      - equal:
+          path: spec.variants[0].components[0].install.upgradeCRDs
+          value: CreateReplace

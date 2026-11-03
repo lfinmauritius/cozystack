@@ -625,6 +625,35 @@ gateway:
   # class here when moving the default. Reaches the per-tenant gateway
   # chart as _cluster.gateway-tenant-classes.
   tenantSelectableClasses: []
+  # GatewayClasses whose Gateways are INTERNAL to the organisation that owns
+  # them: each has its own proxy pods in the tenant namespace (unlike the
+  # bundled cilium class, whose Gateways all share one per-node Envoy), so
+  # they can be fenced. Every tenant gateway release renders the
+  # CiliumNetworkPolicy cozystack-gateway-isolation, whatever its class: it
+  # selects only Envoy Gateway proxy pods of that tenant's Gateway (none on
+  # cilium), which refuse traffic from outside the cluster and from every
+  # namespace whose namespace.cozystack.io/gateway label does not name the
+  # tenant (system namespaces and other organisations included), and may
+  # reach their backends and the Envoy Gateway controller.
+  #
+  # Every listed class must also be in tenantSelectableClasses (the platform
+  # render refuses otherwise): being internal is something an organisation
+  # opts into by choosing the class. The publishing tenant's gateway release
+  # refuses an isolated class, since its Gateway serves the platform's public
+  # routes and the cluster-wide ACME HTTP-01 solver, and className may never
+  # be envoy-internal. Reaches the per-tenant gateway chart as
+  # _cluster.gateway-isolated-classes.
+  isolatedClasses: []
+  # Install Envoy Gateway (packages/system/envoy-gateway) in Gateway Namespace
+  # Mode with the GatewayClass `envoy-internal`. Enabling internal Gateways
+  # for organisations takes, in the same values:
+  #   gateway.internal.enabled: true
+  #   gateway.tenantSelectableClasses: [envoy-internal]
+  #   gateway.isolatedClasses: [envoy-internal]
+  # and publishing.certificates.solver: dns01, because an HTTP-01 challenge
+  # never validates against a private address.
+  internal:
+    enabled: false
   # Advertise HTTP/2 on every Gateway API listener served by the bundled
   # Cilium dataplane. Browsers negotiate HTTP/2 exclusively through TLS ALPN
   # "h2"; with this off, Envoy advertises no ALPN protocols and every client

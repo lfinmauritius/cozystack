@@ -1,0 +1,63 @@
+# Envoy Gateway backs the INTERNAL tenant Gateways (GatewayClass envoy-internal,
+# templates/gatewayclass.yaml). Every Cilium Gateway shares one per-node Envoy,
+# so a tenant Gateway there cannot be isolated from another organisation; in
+# Gateway Namespace Mode each Gateway gets its own proxy Deployment and
+# LoadBalancer Service in the Gateway's own namespace instead. See README.md.
+#
+# Images are pinned by exact tag AND index digest (crane digest <ref>). Bump
+# them together with ENVOY_GATEWAY_CHART_VERSION/DIGEST in the Makefile.
+gateway-helm:
+  global:
+    images:
+      envoyGateway:
+        # Distroless upstream image. Also used for the shutdown-manager
+        # sidecar of every proxy pod (the chart threads it into
+        # provider.kubernetes.shutdownManager.image).
+        image: docker.io/envoyproxy/gateway:v1.9.3@sha256:192fc9bdadb6d2462e8cf7bd702ce3dd9648f3310c6038787448a1f509b7cd9f
+      ratelimit:
+        # Deployed only if a rateLimit backend is configured; pinned anyway so
+        # nothing in the rendered config floats.
+        image: docker.io/envoyproxy/ratelimit:5ae0682e@sha256:b95206e32b1a5f824fb06062fbb85bbdfb7f5de54135e92afe8462f22c979681
+  crds:
+    gatewayAPI:
+      # The safe-upgrades ValidatingAdmissionPolicy ships with
+      # cozystack.gateway-api-crds; a second copy would fight over it.
+      safeUpgradePolicy:
+        enabled: false
+  # Proxies dial the controller at envoy-gateway.<ns>.svc.<this domain>, and
+  # certgen mints the xDS serving-cert SANs from it. Fallback only: on a
+  # platform install core/platform injects networking.clusterDomain here via
+  # the shared cozystack-values Secret (see templates/apps.yaml there).
+  kubernetesClusterDomain: cozy.local
+  # The topology injector is a cluster-wide mutating webhook on every
+  # pods/binding (no selector), installed as a Helm hook and so never removed
+  # on uninstall. It only feeds zone-aware routing, which a single-replica
+  # internal Gateway does not use; keep it off the scheduling hot path.
+  topologyInjector:
+    enabled: false
+  config:
+    envoyGateway:
+      provider:
+        type: Kubernetes
+        kubernetes:
+          deploy:
+            # Proxy Deployment, Service, ServiceAccount and ConfigMap are
+            # created in the Gateway's namespace, named after the Gateway.
+            # The proxy authenticates to the controller xDS server (18000/TCP)
+            # with a projected ServiceAccount token over TLS.
+            type: GatewayNamespace
+
+# Data plane of the envoy-internal GatewayClass, set through its EnvoyProxy.
+proxy:
+  # Distroless Envoy, the version Envoy Gateway v1.9.3 pins as
+  # DefaultEnvoyProxyImage (same index digest as upstream).
+  image: docker.io/envoyproxy/envoy:distroless-v1.39.5@sha256:9d84a586119a27b50437dbb01eccd4722832741539b1ed53c8e9d6da6067a6e0
+  # A memory limit sets memory.max on the pod cgroup (the Talos userspace OOM
+  # handler only kills cgroups lacking it) and lets Envoy Gateway size the
+  # Envoy overload manager heap from it.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi

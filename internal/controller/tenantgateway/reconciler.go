@@ -154,6 +154,14 @@ type Reconciler struct {
 // lost event.
 const routeStatusRetryDelay = 10 * time.Second
 
+// errGatewayRecreating stops a pass while the Gateway is being deleted so
+// that it can be recreated on another GatewayClass (see reconcileGateway).
+// The Gateway's deletion re-enqueues the TenantGateway through Owns; the
+// delay is only the backstop for a lost event.
+var errGatewayRecreating = errors.New("gateway is being deleted to be recreated")
+
+const gatewayRecreateRetryDelay = 5 * time.Second
+
 // Reconcile renders the desired Gateway from a TenantGateway spec.
 // HTTP-01 mode: static `http` listener on port 80 (for ACME), per-app
 // HTTPS listeners are added by route-driven reconciliation in later
@@ -166,6 +174,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if err := r.runReconcileSteps(ctx, tgw); err != nil {
+		// Not a failure: the old Gateway is still tearing down. Nothing
+		// after reconcileGateway ran, and the tenant's status is left
+		// alone until the successor exists.
+		if errors.Is(err, errGatewayRecreating) {
+			log.FromContext(ctx).V(1).Info("waiting for the Gateway to be deleted before recreating it",
+				"requeueAfter", gatewayRecreateRetryDelay)
+			return ctrl.Result{RequeueAfter: gatewayRecreateRetryDelay}, nil
+		}
 		// A route-status write that failed retryably cost the pass
 		// nothing else: every desired-state step already ran, so the
 		// failure is not surfaced on the TenantGateway and the requeue
@@ -1147,6 +1163,42 @@ func (r *Reconciler) reconcileGateway(ctx context.Context, tgw *gatewayv1alpha1.
 		// TenantGateway.
 		if !ownedByTenantGateway(existing.OwnerReferences, tgw) {
 			return fmt.Errorf("gateway %s/%s exists but is not owned by TenantGateway %s; refusing to take over (delete it manually if you want the controller to manage this Gateway)", tgw.Namespace, tgw.Name, tgw.Name)
+		}
+		// Already being deleted (the class change below, or a manual
+		// delete): updating it is pointless and its successor would
+		// collide on the name. Wait for it to go.
+		if !existing.DeletionTimestamp.IsZero() {
+			return errGatewayRecreating
+		}
+		// A class change is a delete and a fresh create, never an
+		// in-place patch. Each Gateway controller owns its data plane
+		// through the Gateway (Cilium: the cilium-gateway-<name> Service
+		// and its CiliumEnvoyConfig; Envoy Gateway: the proxy Deployment
+		// and LoadBalancer Service), and the controller losing the class
+		// is not guaranteed to tear that down when only the class field
+		// moves. A stale data plane would keep routing the published apps
+		// on the old address, which defeats an INTERNAL class's isolation.
+		// Deleting the object hands cleanup to owner GC and to each
+		// controller's own delete path, and the successor gets a new UID.
+		//
+		// Foreground, not background: the Gateway stays (terminating)
+		// until GC has deleted the dependents that block owner deletion,
+		// so the successor, and with it the new class's data plane,
+		// cannot exist next to the old one. The price is a Gateway-less
+		// window of a few seconds on a change that already moves the
+		// tenant to a new address. The UID precondition keeps this from
+		// deleting a Gateway someone recreated since the Get.
+		if existing.Spec.GatewayClassName != desired.Spec.GatewayClassName {
+			if err := r.Delete(ctx, existing,
+				client.PropagationPolicy(metav1.DeletePropagationForeground),
+				client.Preconditions{UID: &existing.UID},
+			); err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf("delete Gateway for class change %q -> %q: %w",
+					existing.Spec.GatewayClassName, desired.Spec.GatewayClassName, err)
+			}
+			logger.Info("deleted Gateway to recreate it on another class", "namespace", tgw.Namespace,
+				"name", tgw.Name, "from", existing.Spec.GatewayClassName, "to", desired.Spec.GatewayClassName)
+			return errGatewayRecreating
 		}
 		// Merge labels: keep keys other actors (Cilium operator,
 		// kubectl label, future controllers) wrote, only add /

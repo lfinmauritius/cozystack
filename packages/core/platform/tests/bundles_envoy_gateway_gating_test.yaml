@@ -1,0 +1,73 @@
+suite: envoy-gateway package gated by gateway.internal.enabled
+templates:
+  - templates/bundles/system.yaml
+release:
+  name: cozystack
+  namespace: cozy-system
+tests:
+  # any: true is required for the negative to search the whole document set
+  # (see bundles_keda_default_test.yaml).
+  - it: does not emit cozystack.envoy-gateway by default
+    set:
+      bundles:
+        system:
+          enabled: true
+          variant: isp-full
+    asserts:
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.envoy-gateway
+          any: true
+        not: true
+
+  - it: emits cozystack.envoy-gateway when gateway.internal.enabled is true
+    set:
+      bundles:
+        system:
+          enabled: true
+          variant: isp-full
+      gateway:
+        internal:
+          enabled: true
+    asserts:
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.envoy-gateway
+          any: true
+
+  - it: renders with a values file that has no gateway.internal block
+    set:
+      bundles:
+        system:
+          enabled: true
+          variant: isp-full
+      gateway:
+        internal: null
+    asserts:
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.envoy-gateway
+          any: true
+        not: true
+
+  - it: honors disabledPackages even when enabled
+    set:
+      bundles:
+        system:
+          enabled: true
+          variant: isp-full
+        disabledPackages:
+          - cozystack.envoy-gateway
+      gateway:
+        internal:
+          enabled: true
+    asserts:
+      - containsDocument:
+          apiVersion: cozystack.io/v1alpha1
+          kind: Package
+          name: cozystack.envoy-gateway
+          any: true
+        not: true

@@ -340,6 +340,12 @@
        consumes their values. */ -}}
 {{include "cozystack.platform.package.default" (list "cozystack.ingress-application" $) }}
 {{include "cozystack.platform.package.default" (list "cozystack.gateway-application" $) }}
+{{- /* Envoy Gateway backs the INTERNAL tenant Gateways (GatewayClass
+       envoy-internal). Off by default; dig keeps a values file that predates
+       gateway.internal rendering. */ -}}
+{{- if eq (toString (dig "internal" "enabled" false .Values.gateway)) "true" }}
+{{include "cozystack.platform.package.default" (list "cozystack.envoy-gateway" $) }}
+{{- end }}
 {{include "cozystack.platform.package.full.default" (list "cozystack.seaweedfs-application" $) }}
 {{include "cozystack.platform.package.default" (list "cozystack.info-application" $) }}
 {{- /* Variant selection mirrors cozystack-engine above: `oidc` when

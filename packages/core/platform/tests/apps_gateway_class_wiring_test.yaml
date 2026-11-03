@@ -142,3 +142,118 @@ tests:
       - matchRegex:
           path: stringData["values.yaml"]
           pattern: '(?m)^\s*gateway-tenant-classes:\s*""'
+
+  # gateway.isolatedClasses reaches the gateway chart as
+  # _cluster.gateway-isolated-classes, where it switches on the
+  # cozystack-gateway-isolation CiliumNetworkPolicy for a tenant on that class.
+  - it: writes an empty isolated list by default
+    asserts:
+      - matchRegex:
+          path: stringData["values.yaml"]
+          pattern: '(?m)^\s*gateway-isolated-classes:\s*""'
+
+  - it: carries the isolated classes comma-joined
+    set:
+      gateway:
+        tenantSelectableClasses:
+          - envoy-internal
+          - other-internal
+        isolatedClasses:
+          - envoy-internal
+          - other-internal
+    asserts:
+      - matchRegex:
+          path: stringData["values.yaml"]
+          pattern: '(?m)^\s*gateway-isolated-classes:\s*"envoy-internal,other-internal"'
+
+  - it: accepts an isolated class listed padded on either side
+    set:
+      gateway:
+        tenantSelectableClasses:
+          - " envoy-internal "
+        isolatedClasses:
+          - envoy-internal
+    asserts:
+      - matchRegex:
+          path: stringData["values.yaml"]
+          pattern: '(?m)^\s*gateway-isolated-classes:\s*"envoy-internal"'
+
+  - it: refuses an isolated class that tenants cannot select
+    set:
+      gateway:
+        isolatedClasses:
+          - other-internal
+    asserts:
+      - failedTemplate:
+          errorPattern: 'gateway.isolatedClasses entry "other-internal" is not in gateway.tenantSelectableClasses'
+
+  # The default class is where every tenant that chose nothing lands, the
+  # publishing one included; the internal class must never be it.
+  - it: refuses envoy-internal as the platform default class
+    set:
+      gateway:
+        className: envoy-internal
+        tenantSelectableClasses:
+          - envoy-internal
+        isolatedClasses:
+          - envoy-internal
+    asserts:
+      - failedTemplate:
+          errorPattern: 'gateway.className must not be envoy-internal'
+
+  - it: refuses envoy-internal as the default even when padded
+    set:
+      gateway:
+        className: "  envoy-internal  "
+    asserts:
+      - failedTemplate:
+          errorPattern: 'gateway.className must not be envoy-internal'
+
+  - it: accepts envoy-internal listed padded in both lists
+    set:
+      gateway:
+        tenantSelectableClasses:
+          - " envoy-internal "
+        isolatedClasses:
+          - " envoy-internal"
+    asserts:
+      - matchRegex:
+          path: stringData["values.yaml"]
+          pattern: '(?m)^\s*gateway-isolated-classes:'
+
+  - it: refuses offering envoy-internal to tenants without isolating it
+    set:
+      gateway:
+        tenantSelectableClasses:
+          - envoy-internal
+    asserts:
+      - failedTemplate:
+          errorPattern: 'gateway.tenantSelectableClasses lists envoy-internal but gateway.isolatedClasses does not'
+
+  - it: rejects a non-string entry in gateway.isolatedClasses
+    set:
+      gateway:
+        isolatedClasses:
+          - 42
+    asserts:
+      - failedTemplate:
+          errorPattern: 'gateway.isolatedClasses must be a list of GatewayClass names'
+
+  - it: rejects an isolated class name carrying a comma
+    set:
+      gateway:
+        isolatedClasses:
+          - "envoy-internal,sneaky"
+    asserts:
+      - failedTemplate:
+          errorPattern: 'gateway.isolatedClasses entry "envoy-internal,sneaky" contains a comma'
+
+  # Envoy Gateway's proxies dial the controller by its cluster-domain FQDN, a
+  # vendored-subchart value; same channel as keda.clusterDomain.
+  - it: injects the cluster domain into the Envoy Gateway subchart
+    set:
+      networking.clusterDomain: cluster.local
+    asserts:
+      - matchRegex:
+          path: stringData["values.yaml"]
+          pattern: '(?m)^\s*gateway-helm:\s*\n\s*kubernetesClusterDomain:\s*"cluster.local"'

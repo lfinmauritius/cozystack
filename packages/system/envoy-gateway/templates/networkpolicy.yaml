@@ -1,0 +1,46 @@
+{{- /*
+  Ingress to the Envoy Gateway controller. Selecting the pod makes every
+  ingress not allowed here refused, so tenant pods cannot reach the
+  ratelimit xDS (18001), Wasm (18002) or metrics (19001) ports.
+
+  - Envoy proxy pods, in any namespace (Gateway Namespace Mode puts them in
+    the tenant namespaces), on the xDS port. The pod-namespace Exists term
+    is a namespace key, which stops Cilium from scoping the selector to
+    this namespace. These labels are not the authentication: the proxy also
+    presents a projected ServiceAccount token the controller validates.
+  - The kubelet (host) on the probe port of the Deployment (8081: startup,
+    liveness and readiness probes).
+
+  Nothing else needs in: the certgen Job only talks to the API server, the
+  topology-injector webhook is off (values.yaml), and no ratelimit backend
+  is configured. Enabling either of those means extending this policy.
+*/}}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: envoy-gateway-controller
+  namespace: {{ .Release.Namespace }}
+spec:
+  endpointSelector:
+    matchLabels:
+      control-plane: envoy-gateway
+      app.kubernetes.io/name: gateway-helm
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        app.kubernetes.io/managed-by: envoy-gateway
+        app.kubernetes.io/component: proxy
+      matchExpressions:
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: Exists
+    toPorts:
+    - ports:
+      - port: "18000"
+        protocol: TCP
+  - fromEntities:
+    - host
+    toPorts:
+    - ports:
+      - port: "8081"
+        protocol: TCP

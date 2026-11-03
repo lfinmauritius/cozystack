@@ -55,14 +55,15 @@
        compare against the wrong namespace, so they stop protecting the
        tenant they are meant to. */}}
 {{- $publishingNS := (index .Values._cluster "expose-ingress") | default "tenant-root" }}
-{{- if .Values.gatewayClassName }}
-  {{- $allowed := list $defaultClass }}
-  {{- range splitList "," ((index .Values._cluster "gateway-tenant-classes") | default "") }}
-    {{- $c := . | trim }}
-    {{- if $c }}
-      {{- $allowed = append $allowed $c }}
-    {{- end }}
+{{- $tenantClasses := list }}
+{{- range splitList "," ((index .Values._cluster "gateway-tenant-classes") | default "") }}
+  {{- $c := . | trim }}
+  {{- if $c }}
+    {{- $tenantClasses = append $tenantClasses $c }}
   {{- end }}
+{{- end }}
+{{- if .Values.gatewayClassName }}
+  {{- $allowed := prepend $tenantClasses $defaultClass }}
   {{- if not (has $className $allowed) }}
     {{- fail (printf "packages/extra/gateway: gatewayClass=%q is not selectable by tenants. Allowed: %s. The operator extends the set with gateway.tenantSelectableClasses in the platform values." $className (join ", " $allowed)) }}
   {{- end }}
@@ -92,6 +93,29 @@
   to state it again, and cannot get the two out of step.
 */}}
 {{- $tlsTermination := ternary "edge" "gateway" (has $className $edgeClasses) }}
+{{- /*
+  Isolation is also a property of the CLASS (gateway.isolatedClasses): a
+  class whose proxies are per-Gateway pods in this namespace, which
+  templates/isolation.yaml fences (that policy is rendered for every
+  class; it only bites where such pods exist). An isolated class must be
+  one an organisation opts into (tenant-selectable), and never the
+  publishing tenant's: that Gateway serves the platform's own public
+  routes and the cluster-wide ACME HTTP-01 solver.
+*/}}
+{{- $isolatedClasses := list }}
+{{- range splitList "," ((index .Values._cluster "gateway-isolated-classes") | default "") }}
+  {{- $c := . | trim }}
+  {{- if $c }}
+    {{- $isolatedClasses = append $isolatedClasses $c }}
+  {{- end }}
+{{- end }}
+{{- $isolated := has $className $isolatedClasses }}
+{{- if and $isolated (not (has $className $tenantClasses)) }}
+  {{- fail (printf "packages/extra/gateway: gatewayClass=%q is isolated (_cluster.gateway-isolated-classes) but not tenant-selectable (_cluster.gateway-tenant-classes). An isolated class is one an organisation opts into; the operator lists it in both gateway.isolatedClasses and gateway.tenantSelectableClasses." $className) }}
+{{- end }}
+{{- if and $isolated (eq .Release.Namespace $publishingNS) }}
+  {{- fail (printf "packages/extra/gateway: the publishing tenant (%s) cannot use the isolated gatewayClass=%q: its Gateway serves the platform's public routes and the cluster-wide ACME HTTP-01 solver, which an isolated Gateway refuses from outside the cluster." $publishingNS $className) }}
+{{- end }}
 {{- /*
   Edge termination wins over everything else: the class provider ends
   TLS upstream of the Gateway (Cloudflare Tunnel terminates at the
